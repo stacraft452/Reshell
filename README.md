@@ -253,7 +253,8 @@ go build -trimpath -ldflags="-s -w" -o c2-server-linux ./cmd/server
 - 仅在**有权测试**的环境使用。
 
 ---
-
+## 注！
+- 本c2没有bin形式的shellcode，各位安全研究人员如果想使用对应功能可以使用donut工具转换成相对计算基址shellcode或者自尽进行指令替换编写，请谅解！
 ## 许可证与第三方
 
 - 本项目源码（除第三方组件外）以 **MIT** 许可发布，见根目录 **`LICENSE`**。  
