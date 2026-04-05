@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>客户端管理 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+    <style>
+    /* /clients 页面：与白色接近的文字统一改为深色，保证可读性 */
+    body.page-clients .layout-header,
+    body.page-clients .layout-content,
+    body.page-clients .layout-content .card,
+    body.page-clients .layout-content .table,
+    body.page-clients .layout-content .table td,
+    body.page-clients .layout-content .table th,
+    body.page-clients .layout-content .page-title,
+    body.page-clients .layout-content .breadcrumb-bar,
+    body.page-clients .layout-content .text-muted,
+    body.page-clients .layout-content .form-label {
+        color: #222;
+    }
+    body.page-clients .layout-content .text-muted,
+    body.page-clients .layout-content .breadcrumb-bar {
+        color: #555;
+    }
+    /* 备注输入框保持浅色背景，避免在高亮行中过于突兀 */
+    body.page-clients .layout-content input.form-control.form-control-sm {
+        background-color: #fff;
+        color: #222;
+    }
+    </style>
+</head>
+<body class="page-clients">
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients" class="active">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">客户端管理</div>
+            <div class="layout-header-actions">
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 客户端管理</div>
+            <div class="page-title">客户端列表</div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>实时通知</span>
+                    <span id="ws-status" class="badge bg-secondary">未连接</span>
+                </div>
+                <div class="card-body p-0">
+                    <div id="notification-area" style="max-height: 150px; overflow-y: auto; padding: 10px;">
+                        <small class="text-muted">等待连接...</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>客户端列表</span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadClients()">刷新</button>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>备注</th>
+                            <th>连接方式</th>
+                            <th>外网IP</th>
+                            <th>归属地</th>
+                            <th>内网IP</th>
+                            <th>用户</th>
+                            <th>主机名</th>
+                            <th>OS</th>
+                            <th>进程</th>
+                            <th>状态</th>
+                            <th>心跳</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="tbody">
+                        <tr>
+                            <td colspan="13" class="text-center text-muted">加载中...</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    async function fetchJSON(url, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        }, opts.headers || {});
+        const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+        return res.json();
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    /** 列表中区分 Windows / Linux，便于同一页面管理多平台被控端 */
+    function osCell(os) {
+        const raw = os || '';
+        const low = String(raw).toLowerCase();
+        let badge = '';
+        if (low.indexOf('linux') >= 0) badge = '<span class="badge bg-dark me-1">Linux</span>';
+        else if (low.indexOf('windows') >= 0) badge = '<span class="badge bg-primary me-1">Windows</span>';
+        return badge + '<small>' + escapeHtml(raw || '-') + '</small>';
+    }
+
+    async function loadClients() {
+        const data = await fetchJSON('/api/clients');
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = '';
+        if (!data || !data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="13" class="text-center text-muted">暂无客户端</td></tr>';
+            return;
+        }
+        for (const c of data.items) {
+            const id = (c.id !== undefined && c.id !== null) ? c.id : (c.ID !== undefined ? c.ID : '');
+            const status = c.status || c.Status || 'offline';
+            const tr = document.createElement('tr');
+            tr.id = 'client-row-' + id;
+            if (status === 'online') {
+                tr.classList.add('table-success');
+            }
+            tr.innerHTML = `
+                <td>${id}</td>
+                <td><input class="form-control form-control-sm" style="width: 80px;" value="${c.remark || c.Remark || ''}" onchange="updateRemark(${id}, this.value)"></td>
+                <td><small>${c.connect_method || c.ConnectMethod || 'tcp'}</small></td>
+                <td>${c.external_ip || c.ExternalIP || '-'}</td>
+                <td><small>${c.external_location || c.ExternalLocation || '-'}</small></td>
+                <td>${c.internal_ip || c.InternalIP || '-'}</td>
+                <td>${c.username || c.Username || '-'}</td>
+                <td>${c.hostname || c.Hostname || '-'}</td>
+                <td>${osCell(c.os_type || c.OSType)}</td>
+                <td><small>${c.process_name || c.ProcessName || '-'}</small></td>
+                <td><span class="badge ${status === 'online' ? 'bg-success' : 'bg-secondary'}">${status === 'online' ? '在线' : '离线'}</span></td>
+                <td id="heartbeat-${id}">${c.heartbeat_value || c.HeartbeatValue || 0}</td>
+                <td>
+                    ${status === 'online'
+                        ? `<a href="/client/${id}" class="btn btn-sm btn-outline-primary me-1" title="管理">管理</a>`
+                        : '<span class="text-muted small me-1">离线</span>'}
+                    <button class="btn btn-sm btn-outline-danger" onclick="delC(${id})" title="删除记录">删除</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
+    async function updateRemark(id, remark) {
+        await fetchJSON('/api/clients/' + id, {
+            method: 'PATCH',
+            body: JSON.stringify({remark: remark})
+        });
+    }
+
+    async function delC(id) {
+        if (!confirm('删除客户端记录 ' + id + ' ?')) return;
+        await fetchJSON('/api/clients/' + id, {method: 'DELETE'});
+        loadClients();
+    }
+
+    let ws = null;
+
+    function connectWebSocket() {
+        const token = getToken();
+        if (!token) return;
+        const wsUrl = 'ws://' + window.location.host + '/ws?token=' + token;
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+            const badge = document.getElementById('ws-status');
+            badge.textContent = '已连接';
+            badge.className = 'badge bg-success';
+            addNotification('WebSocket 已连接', 'success');
+        };
+
+        ws.onmessage = (event) => {
+            try {
+                const msg = JSON.parse(event.data);
+                handleMessage(msg);
+            } catch (e) {
+                console.error('Parse message error:', e);
+            }
+        };
+
+        ws.onclose = () => {
+            const badge = document.getElementById('ws-status');
+            badge.textContent = '已断开';
+            badge.className = 'badge bg-secondary';
+            setTimeout(connectWebSocket, 3000);
+        };
+    }
+
+    function handleMessage(msg) {
+        switch (msg.type) {
+            case 'client_online':
+                addNotification(`客户端 #${msg.data.id} 上线: ${msg.data.hostname || msg.data.external_ip}`, 'success');
+                loadClients();
+                break;
+            case 'client_offline':
+                addNotification(`客户端 #${msg.data.client_id} 离线`, 'warning');
+                loadClients();
+                break;
+            case 'client_heartbeat':
+                const el = document.getElementById('heartbeat-' + msg.data.id);
+                if (el) el.textContent = msg.data.heartbeat_value;
+                const row = document.getElementById('client-row-' + msg.data.id);
+                if (row) {
+                    const statusBadge = row.querySelector('td:nth-child(11) .badge');
+                    const opCell = row.querySelector('td:nth-child(13)');
+                    const online = msg.data.status === 'online';
+                    row.classList.toggle('table-success', online);
+                    if (statusBadge) {
+                        statusBadge.className = 'badge ' + (online ? 'bg-success' : 'bg-secondary');
+                        statusBadge.textContent = online ? '在线' : '离线';
+                    }
+                    if (opCell) {
+                        opCell.innerHTML = online
+                            ? `<a href="/client/${msg.data.id}" class="btn btn-sm btn-outline-primary me-1" title="管理">管理</a>
+                               <button class="btn btn-sm btn-outline-danger" onclick="delC(${msg.data.id})" title="删除记录">删除</button>`
+                            : '<span class="text-muted small me-1">离线</span>' +
+                              `<button class="btn btn-sm btn-outline-danger" onclick="delC(${msg.data.id})" title="删除记录">删除</button>`;
+                    }
+                }
+                break;
+        }
+    }
+
+    function addNotification(text, type) {
+        const area = document.getElementById('notification-area');
+        const div = document.createElement('div');
+        const time = new Date().toLocaleTimeString();
+        const alertClass = type === 'success' ? 'alert-success' : type === 'warning' ? 'alert-warning' : 'alert-info';
+        div.className = `alert ${alertClass} py-1 px-2 mb-1 small`;
+        div.innerHTML = `[${time}] ${text}`;
+        area.insertBefore(div, area.firstChild);
+        while (area.children.length > 20) {
+            area.removeChild(area.lastChild);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadClients();
+        connectWebSocket();
+    });
+</script>
+</body>
+</html>

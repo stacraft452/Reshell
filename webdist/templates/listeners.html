@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>监听管理 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+    <style>
+    /* /listeners 路由下：与白色相近的字体改为黑色 */
+    body.page-listeners .layout-header,
+    body.page-listeners .layout-header .layout-header-title,
+    body.page-listeners .layout-content,
+    body.page-listeners .layout-content .card,
+    body.page-listeners .layout-content .table,
+    body.page-listeners .layout-content .table td,
+    body.page-listeners .layout-content .table th,
+    body.page-listeners .layout-content .page-title,
+    body.page-listeners .layout-content .breadcrumb-bar,
+    body.page-listeners .layout-content .text-muted,
+    body.page-listeners .layout-content .form-label,
+    body.page-listeners .drawer,
+    body.page-listeners .drawer .drawer-header,
+    body.page-listeners .drawer .drawer-body,
+    body.page-listeners .drawer .form-label,
+    body.page-listeners .drawer h6 {
+        color: #222;
+    }
+    body.page-listeners .layout-content .text-muted,
+    body.page-listeners .layout-content .breadcrumb-bar {
+        color: #555;
+    }
+    </style>
+</head>
+<body class="page-listeners">
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners" class="active">监听管理</a></li>
+            <li><a href="/clients">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">监听管理</div>
+            <div class="layout-header-actions">
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 监听管理</div>
+            <div class="page-title">监听器列表</div>
+
+            <div class="card p-3 mb-3">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted">当前监听器</span>
+                    <button class="btn btn-sm btn-primary" onclick="openCreateDrawer()">新增监听</button>
+                </div>
+            </div>
+
+            <div class="card p-3">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>备注</th>
+                        <th>模式</th>
+                        <th>监听地址</th>
+                        <th>外网地址</th>
+                        <th>心跳</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                    </thead>
+                    <tbody id="tbody">
+                    <tr><td colspan="8" class="text-center text-muted">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- 右侧抽屉：新增监听 -->
+            <div id="create-drawer" class="drawer drawer-right">
+                <div class="drawer-header">
+                    <span>新增监听</span>
+                    <button type="button" class="btn-close" onclick="closeCreateDrawer()"></button>
+                </div>
+                <div class="drawer-body">
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <input class="form-control" id="drawer-remark" placeholder="备注信息">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">监听地址</label>
+                        <input class="form-control" id="drawer-listen_addr" placeholder="0.0.0.0:4444">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">外网连接地址</label>
+                        <input class="form-control" id="drawer-external_addr" placeholder="如: http://x.x.x.x:4444">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">心跳间隔 (秒)</label>
+                        <input type="number" min="0" class="form-control" id="drawer-heartbeat_interval" placeholder="默认 0 使用后端配置">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">超时次数</label>
+                        <input type="number" min="0" class="form-control" id="drawer-heartbeat_timeout" placeholder="默认 0 使用后端配置">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">VKey</label>
+                        <input class="form-control" id="drawer-vkey" placeholder="可选">
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label">加密盐</label>
+                        <input class="form-control" id="drawer-salt" placeholder="可选">
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary" onclick="submitCreateListener()">保存</button>
+                        <button class="btn btn-outline-secondary" onclick="closeCreateDrawer()">取消</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧抽屉：连接指令（仅单行脚本） -->
+            <div id="scripts-drawer" class="drawer drawer-right">
+                <div class="drawer-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+                    <span>连接指令 - <span id="listener-id-display"></span></span>
+                    <div class="d-flex gap-2 align-items-center">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="closeScriptsDrawer()">退出</button>
+                        <button type="button" class="btn-close" aria-label="退出" onclick="closeScriptsDrawer()" style="opacity:1;filter:none;"></button>
+                    </div>
+                </div>
+                <div class="drawer-body">
+                    <p class="text-muted small mb-3">以下为单行命令，按需复制到目标机执行。</p>
+
+                    <h6>Windows PowerShell（cmd 内一行）</h6>
+                    <pre class="bg-light p-2 rounded" id="script-win-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2 mb-3" onclick="copyScript('script-win-oneliner')">复制</button>
+
+                    <h6>PowerShell 内直接执行</h6>
+                    <pre class="bg-light p-2 rounded" id="script-powershell-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2 mb-3" onclick="copyScript('script-powershell-oneliner')">复制</button>
+
+                    <h6>Linux（wget/curl 二合一）</h6>
+                    <pre class="bg-light p-2 rounded" id="script-linux-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2 mb-3" onclick="copyScript('script-linux-oneliner')">复制</button>
+
+                    <h6>Linux Curl 单行</h6>
+                    <pre class="bg-light p-2 rounded" id="script-curl-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2 mb-3" onclick="copyScript('script-curl-oneliner')">复制</button>
+
+                    <h6>Linux Wget 单行</h6>
+                    <pre class="bg-light p-2 rounded" id="script-wget-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2 mb-3" onclick="copyScript('script-wget-oneliner')">复制</button>
+
+                    <h6>Certutil 下载</h6>
+                    <pre class="bg-light p-2 rounded" id="script-certutil-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2 mb-3" onclick="copyScript('script-certutil-oneliner')">复制</button>
+
+                    <h6>MSHTA</h6>
+                    <pre class="bg-light p-2 rounded" id="script-mshta-oneliner" style="max-height: 120px; overflow-y:auto;"></pre>
+                    <button class="btn btn-sm btn-primary mt-2" onclick="copyScript('script-mshta-oneliner')">复制</button>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    async function fetchJSON(url, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        }, opts.headers || {});
+        const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+        return res.json();
+    }
+
+    async function loadListeners() {
+        const data = await fetchJSON('/api/listeners');
+        const tbody = document.getElementById('tbody');
+        tbody.innerHTML = '';
+        if (!data || !data.items || data.items.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">暂无监听器</td></tr>';
+            return;
+        }
+        for (const l of data.items) {
+            const id = (l.id !== undefined && l.id !== null) ? l.id : (l.ID !== undefined ? l.ID : '');
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${id}</td>
+                <td>${l.remark || l.Remark || ''}</td>
+                <td>${l.mode || l.Mode || ''}</td>
+                <td>${l.listen_addr || l.ListenAddr || ''}</td>
+                <td>${l.external_addr || l.ExternalAddr || ''}</td>
+                <td>${(l.heartbeat_interval_sec || l.HeartbeatIntervalSec || 0)}s / ${(l.heartbeat_timeout_count || l.HeartbeatTimeoutCount || 0)}</td>
+                <td><span class="badge ${(l.status || l.Status) === 'online' ? 'bg-success' : 'bg-secondary'}">${l.status || l.Status || ''}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-success me-1" onclick="startL(${id})">启动</button>
+                    <button class="btn btn-sm btn-secondary me-1" onclick="stopL(${id})">停止</button>
+                    <button class="btn btn-sm btn-info me-1" onclick="showScripts(${id})">连接指令</button>
+                    <button class="btn btn-sm btn-danger" onclick="delL(${id})">删除</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        }
+    }
+
+    function openCreateDrawer() {
+        document.getElementById('drawer-remark').value = '';
+        document.getElementById('drawer-listen_addr').value = '';
+        document.getElementById('drawer-external_addr').value = '';
+        document.getElementById('drawer-heartbeat_interval').value = '';
+        document.getElementById('drawer-heartbeat_timeout').value = '';
+        document.getElementById('drawer-vkey').value = '';
+        document.getElementById('drawer-salt').value = '';
+        document.getElementById('create-drawer').classList.add('open');
+    }
+
+    function closeCreateDrawer() {
+        document.getElementById('create-drawer').classList.remove('open');
+    }
+
+    async function submitCreateListener() {
+        const listenAddr = document.getElementById('drawer-listen_addr').value.trim();
+        const externalAddr = document.getElementById('drawer-external_addr').value.trim();
+        if (!listenAddr || !externalAddr) {
+            alert('请填写监听地址和外网连接地址');
+            return;
+        }
+        const body = {
+            remark: document.getElementById('drawer-remark').value,
+            listen_addr: listenAddr,
+            external_addr: externalAddr,
+            heartbeat_interval_sec: parseInt(document.getElementById('drawer-heartbeat_interval').value || '0', 10),
+            heartbeat_timeout_count: parseInt(document.getElementById('drawer-heartbeat_timeout').value || '0', 10),
+            vkey: document.getElementById('drawer-vkey').value,
+            salt: document.getElementById('drawer-salt').value,
+        };
+        const res = await fetch('/api/listeners', {
+            method: 'POST',
+            headers: {
+                'Authorization': 'Bearer ' + getToken(),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            alert('创建监听失败：' + (data.error || res.status));
+            return;
+        }
+        closeCreateDrawer();
+        loadListeners();
+    }
+
+    async function startL(id) {
+        await fetchJSON('/api/listeners/' + id + '/start', {method: 'POST'});
+        loadListeners();
+    }
+
+    async function stopL(id) {
+        await fetchJSON('/api/listeners/' + id + '/stop', {method: 'POST'});
+        loadListeners();
+    }
+
+    async function delL(id) {
+        if (!confirm('确认删除监听 ' + id + ' ?')) return;
+        await fetchJSON('/api/listeners/' + id, {method: 'DELETE'});
+        loadListeners();
+    }
+
+    function closeScriptsDrawer() {
+        document.getElementById('scripts-drawer').classList.remove('open');
+    }
+
+    async function showScripts(id) {
+        const data = await fetchJSON('/api/listeners/' + id + '/scripts');
+        if (!data || !data.scripts) return;
+        document.getElementById('listener-id-display').textContent = '监听 #' + id;
+        document.getElementById('script-win-oneliner').textContent = data.scripts.windows_oneliner || '';
+        document.getElementById('script-powershell-oneliner').textContent = data.scripts.powershell_oneliner || '';
+        document.getElementById('script-linux-oneliner').textContent = data.scripts.linux_oneliner || '';
+        document.getElementById('script-curl-oneliner').textContent = data.scripts.curl_oneliner || '';
+        document.getElementById('script-wget-oneliner').textContent = data.scripts.wget_oneliner || '';
+        document.getElementById('script-certutil-oneliner').textContent = data.scripts.certutil_oneliner || '';
+        document.getElementById('script-mshta-oneliner').textContent = data.scripts.mshta_oneliner || '';
+        document.getElementById('scripts-drawer').classList.add('open');
+    }
+
+    function copyScript(elementId) {
+        const text = document.getElementById(elementId).textContent;
+        navigator.clipboard.writeText(text).then(() => {
+            alert('已复制到剪贴板');
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', loadListeners);
+</script>
+</body>
+</html>

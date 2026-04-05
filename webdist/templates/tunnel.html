@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>隧道代理 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+</head>
+<body>
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients" class="active">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">隧道代理 - 客户端 #{{.ClientID}}</div>
+            <div class="layout-header-actions">
+                <a href="/client/{{.ClientID}}" class="btn btn-outline-secondary btn-sm">返回设备详情</a>
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 客户端管理 / 隧道代理</div>
+
+            <div class="card mb-3">
+                <div class="card-header">
+                    <span>创建隧道</span>
+                </div>
+                <div class="card-body">
+                    <form id="create-tunnel-form">
+                        <div class="row">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">隧道名称</label>
+                                <input type="text" class="form-control" id="tunnel-name" required placeholder="如: SOCKS5代理">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">隧道类型</label>
+                                <select class="form-select" id="tunnel-type" required>
+                                    <option value="socks5">SOCKS5代理</option>
+                                    <option value="tcp_forward">TCP端口转发</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">本地监听端口</label>
+                                <input type="number" class="form-control" id="tunnel-listen-port" required placeholder="如: 1080">
+                            </div>
+                            <div class="col-md-3 mb-3" id="target-group" style="display:none;">
+                                <label class="form-label">目标地址</label>
+                                <input type="text" class="form-control" id="tunnel-target-host" placeholder="如: 192.168.1.100">
+                            </div>
+                            <div class="col-md-3 mb-3" id="target-port-group" style="display:none;">
+                                <label class="form-label">目标端口</label>
+                                <input type="number" class="form-control" id="tunnel-target-port" placeholder="如: 3389">
+                            </div>
+                        </div>
+                        <div class="row" id="auth-group">
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">用户名（可选）</label>
+                                <input type="text" class="form-control" id="tunnel-username" placeholder="SOCKS5认证用户名">
+                            </div>
+                            <div class="col-md-3 mb-3">
+                                <label class="form-label">密码（可选）</label>
+                                <input type="password" class="form-control" id="tunnel-password" placeholder="SOCKS5认证密码">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">创建隧道</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>隧道列表</span>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="loadTunnels()">刷新</button>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>名称</th>
+                            <th>类型</th>
+                            <th>监听端口</th>
+                            <th>目标</th>
+                            <th>认证</th>
+                            <th>状态</th>
+                            <th>入站流量</th>
+                            <th>出站流量</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="tunnels-table">
+                        <tr><td colspan="10" class="text-center text-muted">暂无隧道</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header">
+                    <span>使用说明</span>
+                </div>
+                <div class="card-body">
+                    <h6>SOCKS5 代理</h6>
+                    <p class="text-muted">创建 SOCKS5 隧道后，可以通过客户端机器代理流量访问内网资源。</p>
+                    <pre class="bg-light p-2 rounded">proxychains4.conf: socks5 127.0.0.1 [监听端口]</pre>
+                    
+                    <h6 class="mt-3">TCP 端口转发</h6>
+                    <p class="text-muted mb-1">将本地端口转发到客户端可访问的目标地址。</p>
+                    <pre class="bg-light p-2 rounded mb-0">访问: 127.0.0.1:[监听端口] -> [目标地址]:[目标端口]</pre>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    const clientID = {{.ClientID}};
+
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    function apiCall(url, options = {}) {
+        return fetch(url, {
+            ...options,
+            headers: {
+                'Authorization': 'Bearer ' + getToken(),
+                'Content-Type': 'application/json',
+                ...(options.headers || {})
+            }
+        });
+    }
+
+    document.getElementById('tunnel-type').addEventListener('change', function() {
+        const type = this.value;
+        document.getElementById('target-group').style.display = type === 'tcp_forward' ? 'block' : 'none';
+        document.getElementById('target-port-group').style.display = type === 'tcp_forward' ? 'block' : 'none';
+    });
+
+    document.getElementById('create-tunnel-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const tunnelType = document.getElementById('tunnel-type').value;
+        const listenPort = parseInt(document.getElementById('tunnel-listen-port').value, 10);
+        const targetHost = (document.getElementById('tunnel-target-host').value || '').trim();
+        const targetPort = parseInt(document.getElementById('tunnel-target-port').value, 10) || 0;
+        if (!listenPort || listenPort <= 0 || listenPort > 65535) {
+            alert('监听端口无效');
+            return;
+        }
+        if (tunnelType === 'tcp_forward') {
+            if (!targetHost) {
+                alert('TCP 转发必须填写目标地址');
+                return;
+            }
+            if (!targetPort || targetPort <= 0 || targetPort > 65535) {
+                alert('TCP 转发必须填写有效目标端口');
+                return;
+            }
+        }
+        const data = {
+            name: document.getElementById('tunnel-name').value,
+            type: tunnelType,
+            listen_port: listenPort,
+            target_host: targetHost,
+            target_port: targetPort,
+            username: document.getElementById('tunnel-username').value || '',
+            password: document.getElementById('tunnel-password').value || ''
+        };
+        apiCall('/api/clients/' + clientID + '/tunnels', {
+            method: 'POST',
+            body: JSON.stringify(data)
+        }).then(r => r.json())
+          .then(result => {
+              if (result && result.ID) {
+                  alert('隧道创建成功');
+                  loadTunnels();
+              } else {
+                  alert('创建失败: ' + (result && result.error ? result.error : '未知错误'));
+              }
+          });
+    });
+
+    function loadTunnels() {
+        apiCall('/api/clients/' + clientID + '/tunnels')
+            .then(r => r.json())
+            .then(data => {
+                const tbody = document.getElementById('tunnels-table');
+                if (!data.items || data.items.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">暂无隧道</td></tr>';
+                    return;
+                }
+                const f = (obj, camel, snake, defVal = '') => {
+                    if (!obj) return defVal;
+                    if (obj[camel] !== undefined && obj[camel] !== null) return obj[camel];
+                    if (obj[snake] !== undefined && obj[snake] !== null) return obj[snake];
+                    return defVal;
+                };
+                tbody.innerHTML = data.items.map(t => `
+                    <tr>
+                        <td>${f(t, 'ID', 'id', '-')}</td>
+                        <td>${f(t, 'Name', 'name', '-')}</td>
+                        <td><span class="badge bg-info">${f(t, 'Type', 'type', '') === 'socks5' ? 'SOCKS5' : 'TCP 转发'}</span></td>
+                        <td>${f(t, 'ListenPort', 'listen_port', '-')}</td>
+                        <td>${f(t, 'Type', 'type', '') === 'tcp_forward' ? (f(t, 'TargetHost', 'target_host', '-') + ':' + f(t, 'TargetPort', 'target_port', '-')) : '-'}</td>
+                        <td>${f(t, 'Username', 'username', '') ? '<span class="badge bg-success">' + f(t, 'Username', 'username', '') + '</span>' : '<span class="text-muted">无</span>'}</td>
+                        <td><span class="${f(t, 'Status', 'status', '') === 'online' ? 'status-online' : 'status-offline'}">${f(t, 'Status', 'status', '') === 'online' ? '运行中' : '已停止'}</span></td>
+                        <td>${formatBytes(f(t, 'BytesIn', 'bytes_in', 0))}</td>
+                        <td>${formatBytes(f(t, 'BytesOut', 'bytes_out', 0))}</td>
+                        <td>
+                            ${f(t, 'Status', 'status', '') === 'online'
+                                ? `<button class="btn btn-sm btn-warning me-1" onclick="stopTunnel(${f(t, 'ID', 'id', 0)})">停止</button>`
+                                : `<button class="btn btn-sm btn-success me-1" onclick="startTunnel(${f(t, 'ID', 'id', 0)})">启动</button>`
+                            }
+                            <button class="btn btn-sm btn-danger" onclick="deleteTunnel(${f(t, 'ID', 'id', 0)})">删除</button>
+                        </td>
+                    </tr>
+                `).join('');
+            });
+    }
+
+    function startTunnel(id) {
+        apiCall('/api/tunnels/' + id + '/start', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.started) {
+                    alert('隧道已启动');
+                    loadTunnels();
+                } else {
+                    alert('启动失败: ' + (data && data.error ? data.error : '未知错误'));
+                }
+            });
+    }
+
+    function stopTunnel(id) {
+        apiCall('/api/tunnels/' + id + '/stop', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.stopped) {
+                    alert('隧道已停止');
+                    loadTunnels();
+                } else {
+                    alert('停止失败: ' + (data && data.error ? data.error : '未知错误'));
+                }
+            });
+    }
+
+    function deleteTunnel(id) {
+        if (!confirm('确定要删除这个隧道吗？')) return;
+        apiCall('/api/tunnels/' + id, { method: 'DELETE' })
+            .then(() => {
+                alert('隧道已删除');
+                loadTunnels();
+            });
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes || bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadTunnels();
+        setInterval(loadTunnels, 5000);
+    });
+</script>
+</body>
+</html>

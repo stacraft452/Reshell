@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>登录 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+</head>
+<body class="login-page">
+<div class="login-bg-circle circle-1"></div>
+<div class="login-bg-circle circle-2"></div>
+
+<div class="login-header">
+    Reshell
+</div>
+<div class="login-body">
+    <div class="card login-card">
+        <div class="card-header text-center">
+            平台登录
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <label class="form-label">账号</label>
+                <input type="text" class="form-control" id="username" >
+            </div>
+            <div class="mb-3">
+                <label class="form-label">密码</label>
+                <input type="password" class="form-control" id="password" placeholder="输入平台密码">
+            </div>
+            <button class="btn btn-primary w-100" onclick="login()">登录</button>
+            <div id="error" class="text-danger mt-3" style="display:none;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    async function login() {
+        const username = document.getElementById('username').value.trim();
+        const pwd = document.getElementById('password').value.trim();
+        const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({username: username, password: pwd})
+        });
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            const msg = data.error || '登录失败';
+            const el = document.getElementById('error');
+            el.textContent = msg;
+            el.style.display = 'block';
+            return;
+        }
+        const data = await res.json();
+        // 仍保留 localStorage 方便前端调用 API
+        localStorage.setItem('c2_token', data.token);
+        window.location.href = '/dashboard';
+    }
+</script>
+</body>
+</html>

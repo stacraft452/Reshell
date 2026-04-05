@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>仪表盘 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+    <style>
+        .dashboard-page .stat-card {
+            background: #fff;
+            border-radius: 10px;
+            border: 1px solid #e8e8e8;
+            padding: 1rem 1.1rem;
+            min-height: 96px;
+            box-shadow: 0 1px 2px rgba(0,0,0,.04);
+        }
+        .dashboard-page .stat-card .label { font-size: 13px; color: #8c8c8c; margin-bottom: 6px; }
+        .dashboard-page .stat-card .value { font-size: 26px; font-weight: 600; color: #262626; line-height: 1.2; }
+        .dashboard-page .panel-card {
+            background: #fff;
+            border-radius: 10px;
+            border: 1px solid #e8e8e8;
+            overflow: hidden;
+            box-shadow: 0 1px 2px rgba(0,0,0,.04);
+            height: 100%;
+        }
+        .dashboard-page .panel-card .panel-head {
+            padding: 12px 16px;
+            font-weight: 600;
+            font-size: 15px;
+            color: #262626;
+            border-bottom: 1px solid #f0f0f0;
+            background: #fafafa;
+        }
+        .dashboard-page .panel-card .panel-body { padding: 16px; }
+        .dashboard-page .kv-row {
+            display: flex;
+            padding: 8px 0;
+            border-bottom: 1px solid #f5f5f5;
+            font-size: 14px;
+        }
+        .dashboard-page .kv-row:last-child { border-bottom: none; }
+        .dashboard-page .kv-k { width: 42%; color: #8c8c8c; flex-shrink: 0; }
+        .dashboard-page .kv-v { color: #262626; word-break: break-all; }
+        .dashboard-page .prog-row { margin-bottom: 18px; }
+        .dashboard-page .prog-row:last-child { margin-bottom: 0; }
+        .dashboard-page .prog-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .dashboard-page .prog-head span:first-child { color: #595959; }
+        .dashboard-page .prog-head span:last-child { color: #262626; font-weight: 500; }
+        .dashboard-page .prog-track {
+            height: 10px;
+            background: #2d2d2d;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+        .dashboard-page .prog-fill { height: 100%; border-radius: 5px; transition: width .35s ease; }
+        .dashboard-page .prog-fill.cpu { background: linear-gradient(90deg, #1890ff, #40a9ff); }
+        .dashboard-page .prog-fill.disk { background: linear-gradient(90deg, #faad14, #ffc53d); }
+        .dashboard-page .prog-fill.mem { background: linear-gradient(90deg, #52c41a, #73d13d); }
+        .dashboard-page .prog-fill.swap { background: linear-gradient(90deg, #f5222d, #ff4d4f); }
+        .dashboard-page .net-stats { margin-top: 20px; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+        .dashboard-page .net-stats .kv-row { border-bottom: none; padding: 6px 0; }
+        .dashboard-page .os-tag {
+            font-size: 12px;
+            font-weight: 500;
+            margin-left: 8px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            background: #e6f7ff;
+            color: #096dd9;
+            vertical-align: middle;
+        }
+        /* 占位 bootstrap 栅格不全时，保证两栏与统计卡横排 */
+        .dashboard-page .dash-row { display: flex; flex-wrap: wrap; margin: 0 -0.5rem; align-items: stretch; }
+        .dashboard-page .dash-row > * { padding: 0 0.5rem; box-sizing: border-box; display: flex; }
+        .dashboard-page .dash-row > * > .stat-card,
+        .dashboard-page .dash-row > * > .panel-card { width: 100%; }
+        .dashboard-page .dash-stat { flex: 1 1 50%; max-width: 50%; }
+        @media (min-width: 768px) { .dashboard-page .dash-stat { flex: 1 1 33.333%; max-width: 33.333%; } }
+        @media (min-width: 1200px) { .dashboard-page .dash-stat { flex: 1 1 16.666%; max-width: 16.666%; } }
+        .dashboard-page .dash-half { flex: 1 1 100%; max-width: 100%; }
+        @media (min-width: 992px) { .dashboard-page .dash-half { flex: 1 1 50%; max-width: 50%; } }
+    </style>
+</head>
+<body class="dashboard-page">
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard" class="active">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">安全管控中心</div>
+            <div class="layout-header-actions">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="refreshData()">刷新</button>
+                <button type="button" class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 仪表盘</div>
+            <div class="page-title">系统总览</div>
+
+            <div class="dash-row mb-3">
+                <div class="dash-stat">
+                    <div class="stat-card">
+                        <div class="label">监听总数</div>
+                        <div id="listeners_total" class="value">-</div>
+                    </div>
+                </div>
+                <div class="dash-stat">
+                    <div class="stat-card">
+                        <div class="label">在线监听数</div>
+                        <div id="listeners_online" class="value text-success">-</div>
+                    </div>
+                </div>
+                <div class="dash-stat">
+                    <div class="stat-card">
+                        <div class="label">客户端总数</div>
+                        <div id="clients_total" class="value">-</div>
+                    </div>
+                </div>
+                <div class="dash-stat">
+                    <div class="stat-card">
+                        <div class="label">在线客户端</div>
+                        <div id="clients_online" class="value text-success">-</div>
+                    </div>
+                </div>
+                <div class="dash-stat">
+                    <div class="stat-card">
+                        <div class="label">历史设备总数</div>
+                        <div id="clients_historical" class="value text-info">-</div>
+                    </div>
+                </div>
+                <div class="dash-stat">
+                    <div class="stat-card">
+                        <div class="label">服务器时间</div>
+                        <div id="server_time" class="value" style="font-size:18px;">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="dash-row align-items-stretch">
+                <div class="dash-half mb-3">
+                    <div class="panel-card">
+                        <div class="panel-head">配置信息</div>
+                        <div class="panel-body">
+                            <div class="kv-row"><span class="kv-k">版本</span><span class="kv-v" id="cfg_version">1.0</span></div>
+                            <div class="kv-row"><span class="kv-k">WEB端口</span><span class="kv-v" id="cfg_web_port">-</span></div>
+                            <div class="kv-row"><span class="kv-k">授权客户端数量</span><span class="kv-v" id="cfg_licensed_clients">99</span></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="dash-half mb-3">
+                    <div class="panel-card">
+                        <div class="panel-head">
+                            系统信息
+                            <span class="os-tag" id="sys_os_badge">-</span>
+                        </div>
+                        <div class="panel-body">
+                            <div class="prog-row">
+                                <div class="prog-head">
+                                    <span id="lbl_cpu">处理器</span>
+                                    <span id="cpu_val">-</span>
+                                </div>
+                                <div class="prog-track"><div id="cpu_bar" class="prog-fill cpu" style="width:0%"></div></div>
+                            </div>
+                            <div class="prog-row">
+                                <div class="prog-head">
+                                    <span id="lbl_disk">磁盘</span>
+                                    <span id="disk_val">-</span>
+                                </div>
+                                <div class="prog-track"><div id="disk_bar" class="prog-fill disk" style="width:0%"></div></div>
+                            </div>
+                            <div class="prog-row">
+                                <div class="prog-head">
+                                    <span>内存</span>
+                                    <span id="mem_val">-</span>
+                                </div>
+                                <div class="prog-track"><div id="mem_bar" class="prog-fill mem" style="width:0%"></div></div>
+                            </div>
+                            <div class="prog-row">
+                                <div class="prog-head">
+                                    <span id="lbl_swap">虚拟内存</span>
+                                    <span id="swap_val">-</span>
+                                </div>
+                                <div class="prog-track"><div id="swap_bar" class="prog-fill swap" style="width:0%"></div></div>
+                            </div>
+                            <div class="net-stats">
+                                <div class="kv-row"><span class="kv-k">TCP 通讯（已建立）</span><span class="kv-v" id="net_tcp">-</span></div>
+                                <div class="kv-row"><span class="kv-k">UDP 通讯</span><span class="kv-v" id="net_udp">-</span></div>
+                                <div class="kv-row"><span class="kv-k">流出带宽</span><span class="kv-v" id="net_out">-</span></div>
+                                <div class="kv-row"><span class="kv-k">流入带宽</span><span class="kv-v" id="net_in">-</span></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    function fmtBps(bps) {
+        if (typeof bps !== 'number' || isNaN(bps) || bps < 0) return '0B/s';
+        if (bps < 1024) return bps.toFixed(0) + 'B/s';
+        if (bps < 1024 * 1024) return (bps / 1024).toFixed(2) + 'KB/s';
+        return (bps / (1024 * 1024)).toFixed(2) + 'MB/s';
+    }
+
+    function osDisplay(goos) {
+        if (!goos) return '-';
+        const g = String(goos).toLowerCase();
+        if (g === 'windows') return 'Windows';
+        if (g === 'linux') return 'Linux';
+        if (g === 'darwin') return 'macOS';
+        return goos;
+    }
+
+    function setBar(idBar, idVal, v) {
+        const elBar = document.getElementById(idBar);
+        const elVal = document.getElementById(idVal);
+        const pct = typeof v === 'number' && !isNaN(v) ? Math.min(100, Math.max(0, v)) : 0;
+        const label = typeof v === 'number' && !isNaN(v) ? v.toFixed(1) + '%' : '-';
+        if (elVal) elVal.textContent = label;
+        if (elBar) elBar.style.width = pct + '%';
+    }
+
+    async function loadSummary() {
+        const res = await fetch('/api/dashboard/summary', {
+            headers: { 'Authorization': 'Bearer ' + getToken() }
+        });
+        if (!res.ok) {
+            if (res.status === 401) window.location.href = '/login';
+            return;
+        }
+        const d = await res.json();
+        document.getElementById('listeners_total').textContent = d.listeners_total;
+        document.getElementById('listeners_online').textContent = d.listeners_online;
+        document.getElementById('clients_total').textContent = d.clients_total;
+        document.getElementById('clients_online').textContent = d.clients_online;
+        document.getElementById('clients_historical').textContent = d.clients_historical != null ? d.clients_historical : 0;
+
+        if (d.server_time_unix_milli) {
+            const serverDate = new Date(d.server_time_unix_milli);
+            document.getElementById('server_time').textContent = serverDate.toLocaleTimeString('zh-CN', { hour12: false });
+        }
+
+        if (d.dashboard_version != null) document.getElementById('cfg_version').textContent = d.dashboard_version;
+        if (d.web_port != null) document.getElementById('cfg_web_port').textContent = d.web_port;
+        if (d.licensed_client_count != null) document.getElementById('cfg_licensed_clients').textContent = d.licensed_client_count;
+
+        document.getElementById('sys_os_badge').textContent = osDisplay(d.server_os);
+        function stripUsageSuffix(s) {
+            if (!s) return '';
+            return String(s).replace(/占用率$/, '').trim();
+        }
+        document.getElementById('lbl_disk').textContent = stripUsageSuffix(d.disk_metric_label) || '磁盘';
+        document.getElementById('lbl_swap').textContent = stripUsageSuffix(d.swap_metric_label) || (d.server_os === 'windows' ? '虚拟内存' : '交换分区');
+
+        setBar('cpu_bar', 'cpu_val', d.cpu_usage_percent);
+        setBar('mem_bar', 'mem_val', d.memory_usage_percent);
+        setBar('disk_bar', 'disk_val', d.disk_usage_percent);
+        setBar('swap_bar', 'swap_val', d.swap_usage_percent);
+
+        document.getElementById('net_tcp').textContent = d.tcp_established != null ? d.tcp_established : '-';
+        document.getElementById('net_udp').textContent = d.udp_sockets != null ? d.udp_sockets : '-';
+        document.getElementById('net_out').textContent = fmtBps(d.net_out_bps);
+        document.getElementById('net_in').textContent = fmtBps(d.net_in_bps);
+    }
+
+    function refreshData() {
+        loadSummary();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadSummary();
+        setInterval(loadSummary, 5000);
+    });
+</script>
+</body>
+</html>

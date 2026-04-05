@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>载荷生成 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+</head>
+<body>
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients">客户端管理</a></li>
+            <li><a href="/payloads" class="active">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">载荷生成</div>
+            <div class="layout-header-actions">
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 载荷生成</div>
+            <div class="page-title">生成配置</div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <span>生成配置</span>
+                        </div>
+                        <div class="card-body">
+                            <form id="payload-form">
+                                <div class="mb-3">
+                                    <label class="form-label">选择监听器（仅显示运行中）</label>
+                                    <select class="form-select" id="listener-id" required>
+                                        <option value="">选择监听器...</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">目标操作系统</label>
+                                    <select class="form-select" id="target-os" required>
+                                        <option value="windows_x64">Windows x64 (64位)</option>
+                                        <option value="linux_amd64">Linux x64 / amd64（ELF）</option>
+                                    </select>
+                                </div>
+
+                                <div class="form-check mb-3" id="hide-console-wrap">
+                                    <input class="form-check-input" type="checkbox" id="hide-console">
+                                    <label class="form-check-label" for="hide-console">隐藏控制台</label>
+                                    <div class="form-text">勾选后仅对 <strong>Windows</strong> 载荷生效：将 PE 子系统改为图形界面，运行时不再弹出黑色控制台窗口。Linux 无控制台选项。</div>
+                                </div>
+                                
+                                <p class="text-muted small mb-3">输出为可执行文件：从 <code>data/stubs/</code> 对应模板修补后写入 <code>data/generated/</code>，无需本机编译器。</p>
+                                <button type="submit" class="btn btn-primary w-100">生成载荷</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <span>生成结果</span>
+                        </div>
+                        <div class="card-body">
+                            <div id="result-area">
+                                <p class="text-muted text-center">配置参数并点击生成</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-3">
+                        <div class="card-header">
+                            <span>格式说明</span>
+                        </div>
+                        <div class="card-body">
+                            <ul class="list-unstyled mb-0">
+                                <li><strong>模板路径（须预先放入 <code>data/stubs/</code>）</strong>：<code>windows_x64.exe</code>、<code>linux_amd64.elf</code>。生成时在文件中查找 <code>C2EMBED1</code> 并按布局写入回连信息。也可用 <code>C2_STUB_DIR</code> 或 <code>go build -tags=stubembed</code> 内嵌模板。</li>
+                                <li><strong>生成结果</strong> 在 <code>data/generated/</code>，不再使用 <code>data/payloads/</code>。</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    async function fetchJSON(url, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        }, opts.headers || {});
+        const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return;
+        }
+        return res.json();
+    }
+
+    async function loadListeners() {
+        const data = await fetchJSON('/api/listeners');
+        if (data && data.items) {
+            const select = document.getElementById('listener-id');
+            select.innerHTML = '<option value="">选择监听器...</option>';
+            // API 返回的是 Go 结构体序列化，字段名为 PascalCase（Status/ID/Remark/ExternalAddr/Mode）
+            const status = (l) => l.Status !== undefined ? l.Status : l.status;
+            const id = (l) => (l.ID !== undefined && l.ID !== null) ? l.ID : l.id;
+            data.items.filter(l => status(l) === 'online').forEach(l => {
+                const option = document.createElement('option');
+                option.value = id(l);
+                option.textContent = `${l.Remark || l.remark || '未命名'} (${l.ExternalAddr || l.external_addr || ''}) - ${l.Mode || l.mode || 'tcp'}`;
+                select.appendChild(option);
+            });
+        }
+    }
+
+    document.getElementById('payload-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const listenerId = document.getElementById('listener-id').value;
+        const os = document.getElementById('target-os').value;
+        const format = 'bin';
+        const resultArea = document.getElementById('result-area');
+        resultArea.innerHTML = '<p class="text-center"><span class="spinner-border spinner-border-sm"></span> 生成中...</p>';
+        const hideConsole = document.getElementById('hide-console').checked && os.startsWith('windows');
+        const data = await fetchJSON('/api/payloads/generate', {
+            method: 'POST',
+            body: JSON.stringify({
+                listener_id: parseInt(listenerId),
+                os: os,
+                arch: 'amd64',
+                format: format,
+                obfuscate: false,
+                hide_console: hideConsole
+            })
+        });
+        if (data && data.success) {
+            const dlName = data.suggested_filename || data.download_url.split('/').pop();
+            resultArea.innerHTML = `
+                <div class="alert alert-success">
+                    <strong>生成成功！</strong> 已按监听器地址修补 C2 回连信息。
+                </div>
+                <div class="d-grid gap-2">
+                    <a href="${data.download_url}" class="btn btn-success" download="${dlName}">
+                        下载 ${dlName}
+                    </a>
+                </div>
+            `;
+        } else {
+            resultArea.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <strong>生成失败：</strong> ${data && data.error ? data.error : '未知错误'}
+                </div>
+            `;
+        }
+    });
+
+    function syncHideConsoleUI() {
+        const os = document.getElementById('target-os').value;
+        const wrap = document.getElementById('hide-console-wrap');
+        const cb = document.getElementById('hide-console');
+        if (!wrap || !cb) return;
+        const win = os.startsWith('windows');
+        wrap.style.opacity = win ? '1' : '0.5';
+        cb.disabled = !win;
+        if (!win) cb.checked = false;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadListeners();
+        document.getElementById('target-os').addEventListener('change', syncHideConsoleUI);
+        syncHideConsoleUI();
+    });
+</script>
+</body>
+</html>

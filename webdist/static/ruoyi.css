@@ -1,0 +1,524 @@
+body {
+    font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans",sans-serif;
+    background-color: #f0f2f5;
+    color: #333;
+}
+
+.layout-wrapper {
+    display: flex;
+    min-height: 100vh;
+}
+
+.layout-sidebar {
+    width: 220px;
+    background-color: #001529;
+    color: #fff;
+}
+
+.layout-sidebar .logo {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    font-size: 18px;
+    font-weight: 600;
+    background: #002140;
+}
+
+.layout-sidebar .logo span {
+    margin-left: 8px;
+}
+
+.layout-menu {
+    list-style: none;
+    margin: 0;
+    padding: 8px 0;
+}
+
+.layout-menu li a {
+    display: block;
+    padding: 10px 24px;
+    color: rgba(255,255,255,0.75);
+    text-decoration: none;
+    font-size: 14px;
+}
+
+.layout-menu li a:hover {
+    background-color: #1890ff;
+    color: #fff;
+}
+
+.layout-menu li a.active {
+    background-color: #1890ff;
+    color: #fff;
+}
+
+.layout-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.layout-header {
+    height: 60px;
+    background-color: #fff;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+}
+
+.layout-header-title {
+    font-size: 16px;
+    font-weight: 500;
+}
+
+.layout-header-actions .btn {
+    margin-left: 8px;
+}
+
+.layout-content {
+    padding: 16px 24px 24px;
+}
+
+/* 主内容区 input-group / 表单：覆盖 bootstrap.min.css 里深色输入框+浅色字，改为白底黑字 */
+.layout-content .form-control,
+.layout-content .form-select,
+.layout-content textarea.form-control {
+    color: #212529 !important;
+    background-color: #fff !important;
+    border-color: #ced4da !important;
+}
+.layout-content .form-control::placeholder {
+    color: #6c757d !important;
+    opacity: 1;
+}
+.layout-content .input-group-text {
+    color: #212529 !important;
+    background-color: #e9ecef !important;
+    border-color: #ced4da !important;
+}
+.layout-content .form-control:focus,
+.layout-content .form-select:focus,
+.layout-content textarea.form-control:focus {
+    color: #212529 !important;
+    background-color: #fff !important;
+    border-color: #86b7fe !important;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+}
+
+.breadcrumb-bar {
+    font-size: 13px;
+    margin-bottom: 8px;
+    color: #999;
+}
+
+.page-title {
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 12px;
+}
+
+.card {
+    border-radius: 4px;
+    background-color: #fff;
+    border: 1px solid #f0f0f0;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+}
+
+.card-header {
+    background-color: #fafafa;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.search-bar {
+    margin-bottom: 12px;
+}
+
+.search-bar .form-control
+{
+    font-size: 10px;
+}
+.search-bar .form-select {
+    font-size: 10px;
+}
+
+.table thead th {
+    background-color: #fafafa;
+}
+
+.status-online {
+    color: #52c41a;
+}
+
+.status-offline {
+    color: #f5222d;
+}
+
+.badge-online {
+    background-color: #52c41a;
+}
+
+.badge-offline {
+    background-color: #d9d9d9;
+    color: #595959;
+}
+
+/* 客户端详情页：统一使用深色文字，避免过白 */
+body.page-client-detail .layout-header,
+body.page-client-detail .layout-content,
+body.page-client-detail .layout-content .card,
+body.page-client-detail .layout-content .table,
+body.page-client-detail .layout-content .table td,
+body.page-client-detail .layout-content .table th,
+body.page-client-detail .layout-content .page-title,
+body.page-client-detail .layout-content .breadcrumb-bar,
+body.page-client-detail .layout-content .text-muted,
+body.page-client-detail .layout-content .form-label {
+    color: #222;
+}
+body.page-client-detail .layout-content .text-muted,
+body.page-client-detail .layout-content .breadcrumb-bar {
+    color: #555;
+}
+
+/* 文件管理 / 文件操作页：表格与正文用纯黑，避免 Bootstrap 表格色过浅看不清 */
+body.page-files .layout-header,
+body.page-files .layout-header-title,
+body.page-files .layout-content,
+body.page-files .layout-content .card,
+body.page-files .layout-content .card-header,
+body.page-files .layout-content .card-header span,
+body.page-files .layout-content .table,
+body.page-files .layout-content .table td,
+body.page-files .layout-content .table th,
+body.page-files .layout-content .table > :not(caption) > * > *,
+body.page-files .layout-content .page-title,
+body.page-files .layout-content .form-label,
+body.page-files .layout-content code,
+body.page-files .layout-content .input-group-text,
+body.page-files .layout-content .form-control,
+body.page-files .layout-content .form-check-label,
+body.page-files .layout-content textarea {
+    color: #000;
+}
+body.page-files .layout-content .breadcrumb-bar,
+body.page-files .layout-content .text-muted,
+body.page-files #dir-tree {
+    color: #333;
+}
+body.page-files .layout-content .table thead th {
+    color: #000;
+    font-weight: 600;
+}
+
+/* card-body.p-0 多为贴边表格：Bootstrap 5 的 --bs-table-color 过浅，此处强制黑色 */
+.layout-content .card-body.p-0 .table {
+    --bs-table-color: #000;
+    --bs-table-striped-color: #000;
+    --bs-table-active-color: #000;
+    --bs-table-hover-color: #000;
+    color: #000;
+}
+.layout-content .card-body.p-0 .table td,
+.layout-content .card-body.p-0 .table th,
+.layout-content .card-body.p-0 .table > :not(caption) > * > * {
+    color: #000 !important;
+}
+.layout-content .card-body.p-0 .text-muted,
+.layout-content .card-body.p-0 small.text-muted {
+    color: #000 !important;
+}
+
+.login-page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background: radial-gradient(circle at top left, #e6f7ff 0, #f0f2f5 40%, #f5f5f5 100%);
+    position: relative;
+    overflow: hidden;
+}
+
+.login-header {
+    height: 60px;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.login-body {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+.login-card .form-control {
+    width: 260px;          /* 自己调想要的宽度，比如 240 / 260 / 280 */
+    max-width: 100%;       /* 小屏时不要溢出 */
+    margin: 0 auto;        /* 左右居中 */
+}
+
+.login-bg-circle {
+    position: absolute;
+    border-radius: 50%;
+    opacity: 0.15;
+    background: linear-gradient(135deg, #40a9ff, #9254de);
+    animation: float 16s ease-in-out infinite;
+}
+
+.login-bg-circle.circle-1 {
+    width: 260px;
+    height: 260px;
+    top: -80px;
+    right: -80px;
+}
+
+.login-bg-circle.circle-2 {
+    width: 220px;
+    height: 220px;
+    bottom: -100px;
+    left: -60px;
+    animation-delay: -8s;
+}
+
+@keyframes float {
+    0%   { transform: translateY(0) translateX(0); }
+    50%  { transform: translateY(20px) translateX(10px); }
+    100% { transform: translateY(0) translateX(0); }
+}
+
+.drawer {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    width: 360px;
+    max-width: 100%;
+    background: #fff;
+    box-shadow: -2px 0 8px rgba(0,0,0,0.15);
+    transform: translateX(100%);
+    transition: transform 0.25s ease-out;
+    z-index: 1050;
+}
+
+.drawer-right {
+    right: 0;
+}
+
+.drawer.open {
+    transform: translateX(0);
+}
+
+.drawer-header {
+    height: 56px;
+    padding: 0 16px;
+    border-bottom: 1px solid #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 15px;
+    font-weight: 500;
+}
+
+.drawer-body {
+    padding: 16px;
+    overflow-y: auto;
+    height: calc(100% - 56px);
+}
+
+/* ---------- 全站按钮：圆角 + 蓝→紫→品红渐变（任意页面 / 路由 / 原生 button 与 a.btn） ---------- */
+:root {
+    --gradient-2-a: #2563eb;
+    --gradient-2-b: #9333ea;
+    --gradient-2-c: #db2777;
+    --btn-gradient-2: linear-gradient(135deg, var(--gradient-2-a) 0%, var(--gradient-2-b) 48%, var(--gradient-2-c) 100%);
+}
+
+/* 所有 button：圆角（关闭叉、隐藏、Bootstrap Tabs 的 .nav-link 除外） */
+button:not(.btn-close):not([hidden]):not(.nav-link) {
+    border-radius: 8px;
+}
+
+/* 未带 Bootstrap .btn 的 button：与主题一致的实心渐变（如文件管理工具条图标） */
+button:not(.btn):not(.btn-close):not([hidden]):not(.nav-link) {
+    font-weight: 500;
+    font-size: inherit;
+    font-family: inherit;
+    line-height: 1.25;
+    color: #fff !important;
+    border: none !important;
+    background-color: transparent !important;
+    background-image: var(--btn-gradient-2) !important;
+    background-size: 100% 100%;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+button:not(.btn):not(.btn-close):not([hidden]):not(.nav-link):hover {
+    filter: brightness(1.08);
+    color: #fff !important;
+}
+
+button:not(.btn):not(.btn-close):not([hidden]):not(.nav-link):active {
+    filter: brightness(0.94);
+}
+
+button:not(.btn):not(.btn-close):not([hidden]):not(.nav-link):disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    filter: none;
+}
+
+a.btn {
+    text-decoration: none !important;
+}
+
+a.btn:hover,
+a.btn:focus,
+a.btn:active,
+a.btn:visited {
+    text-decoration: none !important;
+}
+
+.btn:not(.btn-link):not(.btn-close) {
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+.btn-primary,
+.btn-success,
+.btn-info,
+.btn-warning,
+.btn-danger,
+.btn-secondary {
+    border: none !important;
+    color: #fff !important;
+    background-color: transparent !important;
+    background-image: var(--btn-gradient-2) !important;
+    background-size: 100% 100%;
+}
+
+.btn-primary:hover,
+.btn-success:hover,
+.btn-info:hover,
+.btn-warning:hover,
+.btn-danger:hover,
+.btn-secondary:hover {
+    filter: brightness(1.07);
+    color: #fff !important;
+}
+
+.btn-primary:focus,
+.btn-success:focus,
+.btn-info:focus,
+.btn-warning:focus,
+.btn-danger:focus,
+.btn-secondary:focus {
+    color: #fff !important;
+    box-shadow: 0 0 0 0.2rem rgba(147, 51, 234, 0.4) !important;
+}
+
+.btn-primary:active,
+.btn-success:active,
+.btn-info:active,
+.btn-warning:active,
+.btn-danger:active,
+.btn-secondary:active {
+    filter: brightness(0.95);
+    color: #fff !important;
+}
+
+.btn-outline-primary,
+.btn-outline-secondary,
+.btn-outline-success,
+.btn-outline-danger,
+.btn-outline-warning,
+.btn-outline-info,
+.btn-outline-dark {
+    border: 2px solid transparent !important;
+    border-radius: 8px !important;
+    background: linear-gradient(#fff, #fff) padding-box, var(--btn-gradient-2) border-box !important;
+    color: #6d28d9 !important;
+}
+
+.btn-outline-primary:hover,
+.btn-outline-secondary:hover,
+.btn-outline-success:hover,
+.btn-outline-danger:hover,
+.btn-outline-warning:hover,
+.btn-outline-info:hover,
+.btn-outline-dark:hover {
+    background: var(--btn-gradient-2) !important;
+    border-color: transparent !important;
+    color: #fff !important;
+}
+
+/* :focus / :active 必须与 :hover 同样使用渐变底，否则默认白底 + 此处白字会导致「点击后全白看不见字」 */
+.btn-outline-primary:focus,
+.btn-outline-secondary:focus,
+.btn-outline-success:focus,
+.btn-outline-danger:focus,
+.btn-outline-warning:focus,
+.btn-outline-info:focus,
+.btn-outline-dark:focus,
+.btn-outline-primary:active,
+.btn-outline-secondary:active,
+.btn-outline-success:active,
+.btn-outline-danger:active,
+.btn-outline-warning:active,
+.btn-outline-info:active,
+.btn-outline-dark:active {
+    background: var(--btn-gradient-2) !important;
+    border-color: transparent !important;
+    color: #fff !important;
+    box-shadow: 0 0 0 0.2rem rgba(147, 51, 234, 0.35) !important;
+}
+
+.btn-outline-primary:active,
+.btn-outline-secondary:active,
+.btn-outline-success:active,
+.btn-outline-danger:active,
+.btn-outline-warning:active,
+.btn-outline-info:active,
+.btn-outline-dark:active {
+    filter: brightness(0.94);
+}
+
+.btn:disabled,
+.btn.disabled,
+a.btn.disabled,
+fieldset:disabled .btn {
+    opacity: 0.52;
+    pointer-events: none;
+}
+
+/* Tabs 内的页签也是 button：仅圆角，不参与渐变实心样式 */
+.nav-tabs button.nav-link {
+    border-radius: 8px 8px 0 0;
+}
+
+.layout-content .btn-group {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.layout-content .btn-group > .btn {
+    border-radius: 8px !important;
+    margin: 0 !important;
+}
+
+/* 设备详情：备注区输入框在窄列内收缩，避免撑破卡片 */
+.remark-card-body .remark-input-row {
+    max-width: 100%;
+}
+
+.remark-card-body .remark-input-control {
+    min-width: 0;
+    flex: 1 1 12rem;
+    width: auto;
+    max-width: 100%;
+}
+

