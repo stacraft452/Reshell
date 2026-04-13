@@ -1,261 +1,275 @@
 # Reshell
 
-基于 **Go** 的 C2（Command & Control）实验平台：单进程同时提供 **Web 管理面板**、**TCP 监听器**、**载荷下载与一键上线脚本**，被控端为 **C/C++**（Windows / Linux amd64），通过 **二进制 Stub 修补（C2EMBED1）** 注入回连参数，生成载荷时**不需要**在本机调用 g++ 编译器。
-（出现任何bug，请诸位积极开issue，我会逐步完善的）
----
+A **Go-based** C2 (Command & Control) lab platform: a single process provides a **Web admin panel**, **TCP listener**, **payload download + one-click launch scripts**.  
+Agents are written in **C/C++** (Windows / Linux amd64). Callback parameters are injected via **binary stub patching (C2EMBED1)**.  
+When generating payloads, **no local g++ invocation is required**.
 
-## 开发意图
-
-1. **技术架构**：在受控环境中理解典型 C2 的分层设计——管理面（HTTP + JWT + 内嵌前端）、浏览器实时通道（WebSocket）、数据面（TCP 监听与自定义协议）、以及「模板 PE/ELF + 配置块修补」的载荷流水线。  
-2. **授权安全测试**：仅用于**自有设备**、**实验室靶机**或**书面授权**的渗透/红队演练；用于未授权系统属违法，本项目不提供也不鼓励此类用途。  
-3. **可复现、易部署**：服务端依赖 **纯 Go + 内嵌 SQLite（glebarez/sqlite，默认 `CGO_ENABLED=0`）**，便于单二进制拷贝部署。
+(If you encounter bugs, please open issues. The project will be improved incrementally.)
 
 ---
 
-## 克隆后从零跑通（必读）
+## Development Intent
 
-按顺序做即可在本机打开面板；**不要求**事先准备 Stub 也能先启动服务（仅登录与界面）。
+1. **Architecture learning**: understand layered C2 design in controlled environments — management plane (HTTP + JWT + embedded frontend), browser real-time channel (WebSocket), data plane (TCP listener + custom protocol), and payload pipeline ("template PE/ELF + config block patching").
+2. **Authorized security testing only**: use only on **owned devices**, **lab targets**, or systems with **written authorization**. Unauthorized use is illegal. This project does not provide or encourage such behavior.
+3. **Reproducible and easy deployment**: server depends on **pure Go + embedded SQLite** (`glebarez/sqlite`, default `CGO_ENABLED=0`), suitable for single-binary deployment.
 
-| 步骤 | 操作 |
+---
+
+## Run From Scratch After Clone (Required Reading)
+
+Follow these steps to open the panel locally.  
+You can start the service **without preparing stubs first** (login and UI still work).
+
+| Step | Action |
 |------|------|
-| 1 | 安装 **Go 1.21 或以上**（`go version` 可验证）。 |
-| 2 | 进入**仓库根目录**（该目录下必须有 `go.mod`、`config.yaml`）。 |
-| 3 | 拉依赖：`go mod download` |
-| 4 | 编辑 **`config.yaml`**：至少修改 `auth.login_password`、`auth.jwt_secret`（生产环境勿使用默认弱口令）。 |
-| 5 | 启动：`go run ./cmd/server` 或先 `go build -trimpath -ldflags="-s -w" -o c2-server.exe ./cmd/server` 再运行生成的可执行文件。 |
-| 6 | 浏览器访问 **`config.yaml` 里 `server.addr` 对应的地址**（默认一般为 `http://127.0.0.1:8080` 或 `http://localhost:8080`，若写成 `:8080` 则监听所有网卡）。 |
-| 7 | 使用你在配置中设置的 **`login_password`** 登录。 |
+| 1 | Install **Go 1.21+** (`go version` to verify). |
+| 2 | Enter the **repository root** (must contain `go.mod` and `config.yaml`). |
+| 3 | Download dependencies: `go mod download` |
+| 4 | Edit **`config.yaml`**: at minimum update `auth.login_password` and `auth.jwt_secret` (do not use weak defaults in production). |
+| 5 | Start: `go run ./cmd/server` or build first with `go build -trimpath -ldflags="-s -w" -o c2-server.exe ./cmd/server`, then run the executable. |
+| 6 | Open the address from **`server.addr` in `config.yaml`** (commonly `http://127.0.0.1:8080` or `http://localhost:8080`; if set to `:8080`, it listens on all interfaces). |
+| 7 | Log in using your configured **`login_password`**. |
 
-**常见启动失败：**
+**Common startup failures:**
 
-- `load config failed` / `read config`：当前工作目录下**没有** `config.yaml`。请 `cd` 到含配置文件的目录再执行，或在该目录下放一份 `config.yaml`。  
-- 端口被占用：修改 `server.addr` 为其他端口，或结束占用进程。
+- `load config failed` / `read config`: current working directory does **not** contain `config.yaml`. `cd` to the correct directory or place `config.yaml` there.
+- Port already in use: change `server.addr` or stop the process using that port.
 
 ---
 
-## Stub 模板（载荷生成 / 一键上线下载）
+## Stub Templates (Payload Generation / One-Click Download)
 
-以下能力**依赖**带 **C2EMBED1** 魔数的预编译模板文件；若缺失，服务仍可运行，但**载荷生成**、**连接指令里触发的 exe/elf 下载**会报错。
+These features require prebuilt templates containing **C2EMBED1** magic bytes.  
+If stubs are missing, the service can still run, but **payload generation** and **exe/elf download triggered by connect commands** will fail.
 
-| 文件（相对 `data/stubs/`） | 用途 |
+| File (relative to `data/stubs/`) | Purpose |
 |---------------------------|------|
-| `windows_x64.exe` | Windows x64 载荷 |
-| `windows_x86.exe` | Windows x86 载荷（本次并未开发，但提供了win适配源码，可自行使用mingw32进行编译） |
-| `linux_amd64.elf` | Linux amd64 载荷 |
+| `windows_x64.exe` | Windows x64 payload |
+| `windows_x86.exe` | Windows x86 payload (not fully developed in this version, but Windows-compatible source is provided; you may compile it yourself using mingw32) |
+| `linux_amd64.elf` | Linux amd64 payload |
 
-查找顺序（摘要）：环境变量 **`C2_STUB_DIR`** → 可执行文件同目录下的 `data/stubs` → 当前工作目录下的 `data/stubs`。也可使用 **`go build -tags=stubembed`** 将模板内嵌（见 `internal/payload/stub_embed_on.go`）。自行编译模板时源码在 **`client/native/`**，可配合仓库内 **`scripts/`** 下脚本与本地工具链。
-
----
-
-## 首次监听与上线（简要）
-
-1. 在 **监听管理** 中 **新增监听**：填写 **监听地址**（如 `0.0.0.0:4444`）、**外网连接地址**（客户端回连用，一般为 `IP:端口` 或域名形式，需与实际可达地址一致）。  
-2. 在列表中对该监听点击 **启动**，状态为 **online**。  
-3. 点击 **连接指令**：侧栏展示**单行命令**（PowerShell / Linux / certutil / mshta 等），复制到目标环境执行。  
-4. **公网或「本机用 localhost 开面板、肉鸡在远端」**时：在 **`config.yaml`** 中配置 **`server.public_host`** 为对客户端可达的 IP 或域名（勿填 `0.0.0.0`），否则连接指令里的 HTTP 地址可能仍指向 `127.0.0.1`，远端无法拉取载荷。
+Lookup order (summary): env var **`C2_STUB_DIR`** → `data/stubs` beside executable → `data/stubs` under current working directory.  
+You can also build with **`go build -tags=stubembed`** to embed templates (see `internal/payload/stub_embed_on.go`).  
+Template source is under **`client/native/`**, and can be used with scripts in **`scripts/`** plus local toolchains.
 
 ---
 
-## 界面预览
+## First Listener and Initial Callback (Quick Guide)
 
-以下图片位于仓库 **`pic/`** 目录（`1.png` … `13.png`）。在 **GitHub / Gitee** 等浏览 `README.md` 时会自动加载相对路径图片，无需额外配置。
+1. In **Listener Management**, create a new listener: set **listen address** (e.g. `0.0.0.0:4444`) and **public connect address** (used by agents, typically `IP:port` or domain).
+2. Click **Start** for that listener and ensure status becomes **online**.
+3. Click **Connect Command**: sidebar shows single-line commands (PowerShell / Linux / certutil / mshta, etc.). Copy and run on target environment.
+4. For public deployments or when panel runs on localhost but target is remote: set **`server.public_host`** in `config.yaml` to a target-reachable IP/domain (do not use `0.0.0.0`), otherwise generated HTTP addresses may still point to `127.0.0.1`.
 
-### 1. 仪表盘
+---
+
+## UI Preview
+
+The following images are located in repository **`pic/`** (`1.png` … `13.png`).  
+When browsing `README.md` on **GitHub / Gitee**, relative-path images load automatically.
+
+### 1. Dashboard
 
 ![仪表盘](pic/1.png)
 
-- **安全管控中心 / 仪表盘**：监听与客户端统计、历史设备数、服务器时间。  
-- **配置信息**：版本、Web 端口等。  
-- **本机资源**：CPU、内存、磁盘、虚拟内存占用及网络概况。
+- **Security Control Center / Dashboard**: listener and client stats, historical device counts, server time.
+- **Configuration Info**: version, web port, etc.
+- **Local Resource Usage**: CPU, memory, disk, virtual memory, network overview.
 
-### 2. 监听管理 — 新增监听
+### 2. Listener Management — Create Listener
 
 ![新增监听抽屉](pic/2.png)
 
-- 侧栏进入 **监听管理**，点击 **新增监听** 打开表单。  
-- 填写 **监听地址**、**外网连接地址**、心跳与可选 **VKey / 加密盐** 后保存。
+- Open **Listener Management** and click **Create Listener**.
+- Fill **listen address**, **public connect address**, heartbeat, and optional **VKey / encryption salt**.
 
-### 3. 监听管理 — 连接指令（单行）
+### 3. Listener Management — Connect Commands (Single-Line)
 
 ![连接指令侧栏](pic/3.png)
 
-- 监听 **online** 后，点击 **连接指令** 打开右侧抽屉，可复制 **Windows / Linux** 单行上线命令（含 PowerShell、curl、wget、certutil、mshta 等）。  
-- 使用 **退出** 或 **×** 关闭抽屉。
+- After listener is **online**, click **Connect Commands** to copy one-line bootstrap commands for **Windows / Linux** (PowerShell, curl, wget, certutil, mshta, etc.).
+- Close via **Exit** or **×**.
 
-### 4. 载荷生成 — 配置
+### 4. Payload Generation — Configuration
 
 ![载荷生成配置](pic/4.png)
 
-- **选择监听器**、**目标操作系统**（Windows x64 / Linux amd64）。  
-- Windows 可选 **隐藏控制台**（PE 子系统改为 GUI）。  
-- 说明文案提示从 `data/stubs/` 修补模板并输出到 `data/generated/`。
+- Select **listener** and **target OS** (Windows x64 / Linux amd64).
+- Windows supports optional **hide console** (PE subsystem set to GUI).
+- Notes indicate patching templates from `data/stubs/` and output to `data/generated/`.
 
-### 5. 载荷生成 — 成功与下载
+### 5. Payload Generation — Success and Download
 
 ![载荷生成结果](pic/5.png)
 
-- 点击 **生成载荷** 成功后，在 **生成结果** 区域下载已修补的可执行文件。
+- After clicking **Generate Payload**, download the patched executable from the result area.
 
-### 6. 客户端管理 — 列表与实时通知
+### 6. Client Management — List and Real-Time Notifications
 
 ![客户端列表](pic/6.png)
 
-- **实时通知** 通过 WebSocket 提示连接状态。  
-- **客户端列表** 展示外网/内网 IP、归属地、用户、主机名、OS、进程、在线状态等，可 **管理** 进入详情或 **删除**。
+- **Real-time notifications** are delivered via WebSocket.
+- **Client list** displays public/private IP, geolocation, user, hostname, OS, process, online state, etc.; supports **Manage** and **Delete**.
 
-### 7. 设备详情 — 基本信息与功能入口
+### 7. Device Details — System Info and Feature Entry
 
 ![设备详情](pic/7.png)
 
-- **基本信息 / 硬件与上线信息**：系统版本、权限、CPU/显卡/内存/磁盘、上下线时间等。  
-- **功能面板**：终端、文件、隧道、截图、监控、开机自启等入口。
+- **Basic / Hardware / Session info**: OS version, privilege, CPU/GPU/memory/disk, online/offline time.
+- **Feature panel**: terminal, file manager, tunnel, screenshot, monitor, autostart.
 
-### 8. 远程终端
+### 8. Remote Terminal
 
 ![交互式终端](pic/8.png)
 
-- **终端**：WebSocket 交互式 Shell（Windows `cmd` / Linux `bash` PTY），支持连接、断开、清屏。
+- WebSocket interactive shell (Windows `cmd` / Linux `bash` PTY), supports connect/disconnect/clear.
 
-### 9. 文件管理
+### 9. File Manager
 
 ![文件管理](pic/9.png)
 
-- 左侧 **文件树**，右侧当前目录列表；支持进入目录、新建、上传、下载及与工作目录 **同步**。
+- Left file tree, right current directory list; supports enter directory, create, upload, download, and sync with working directory.
 
-### 10. 隧道代理（SOCKS5 等）
+### 10. Tunnel Proxy (SOCKS5, etc.)
 
 ![隧道代理](pic/10.png)
 
-- **创建隧道**：名称、类型（如 SOCKS5）、本地监听端口、可选账号密码。  
-- 下方为隧道列表与 **使用说明**（代理链配置示例等）。
+- **Create tunnel** with name, type (e.g. SOCKS5), local listen port, optional username/password.
+- Tunnel list and usage notes are shown below.
 
-### 11. 屏幕截图
+### 11. Screenshot
 
 ![屏幕截图](pic/11.png)
 
-- 选择清晰度后 **下发截图**，在页面查看或放大；与实时监控为独立能力。
+- Choose quality and send screenshot request; view or enlarge in page.
 
-### 12. 屏幕监控
+### 12. Screen Monitoring
 
 ![屏幕监控](pic/12.png)
 
-- 设置 **间隔**、**质量** 后 **开始监控**，轮询展示最新一帧；离开前 **停止监控**。
+- Configure interval and quality, then start monitoring to poll latest frames; stop before leaving.
 
-### 13. 开机自启
+### 13. Autostart
 
 ![开机自启](pic/13.png)
 
-- 选择自启方式后 **设置自启** 或 **移除自启**；具体是否在目标系统生效取决于 **操作系统与客户端实现**（Linux 侧见服务端逻辑；Windows 请以当前客户端代码为准）。
+- Set or remove startup methods; actual effect depends on OS and client-side implementation (Linux has service-side logic; Windows follows current client code).
 
 ---
 
-## 功能说明（与当前代码一致）
+## Features (Aligned with Current Code)
 
-### 服务端与面板
+### Server and Panel
 
-- **配置**：`config.yaml` 与进程**当前工作目录**一致；含 `server.addr`、`auth.login_password`、`auth.jwt_secret`、`database.path`、`logging.level`；可选 **`server.public_host`**（见上文）。  
-- **认证**：登录密码 + **JWT**；受保护页面与 `/api/*` 需有效会话。  
-- **健康检查**：`GET /healthz`。  
-- **仪表盘**：监听/客户端统计、本机 CPU/内存/磁盘等（`gopsutil`）。  
-- **静态资源**：`webdist/static` 内嵌进二进制，无需单独部署 `templates/`。
+- **Configuration**: `config.yaml` is loaded from current working directory; includes `server.addr`, `auth.login_password`, `auth.jwt_secret`, `database.path`, `logging.level`; optional **`server.public_host`**.
+- **Auth**: login password + **JWT**; protected pages and `/api/*` require valid session.
+- **Health check**: `GET /healthz`.
+- **Dashboard**: listener/client stats, local CPU/memory/disk metrics (`gopsutil`).
+- **Static assets**: `webdist/static` embedded into binary; no separate `templates/` deployment required.
 
-### 监听器（TCP）
+### Listener (TCP)
 
-- 面板中 **增删改查** 监听；**启动/停止** 对应 **TCP** `Listen`。  
-- **连接指令**：由后端生成多种单行/脚本 URL，指向本机 HTTP 上的 stager 或载荷（见下节）。
+- CRUD listeners in panel; start/stop maps to TCP `Listen`.
+- **Connect commands**: backend generates multiple one-line/script URLs pointing to local HTTP stager/payload.
 
-### 载荷与上线
+### Payload and Bootstrap
 
-- **载荷生成**：从 Stub 修补后写入 **`data/generated/`**；当前仅 **`bin`** 格式；目标：**Windows x64 / x86**、**Linux amd64**。可选 **`hide_console`**（Windows PE 改为 GUI 子系统）。  
-- **HTTP 直链（无需登录）**：`GET /payload/ps1/:id`、`GET /payload_exe/:id`、`GET /payload/{id}.elf`、`GET /payload/{id}.hta`（HTA 内嵌与 ps1 相同的拉取逻辑）。
+- **Payload generation**: patch stubs and output to **`data/generated/`**; current format is **`bin`**; targets: **Windows x64 / x86**, **Linux amd64**. Optional **`hide_console`** (Windows PE GUI subsystem).
+- **Direct HTTP endpoints (no login required)**: `GET /payload/ps1/:id`, `GET /payload_exe/:id`, `GET /payload/{id}.elf`, `GET /payload/{id}.hta` (HTA uses same pull logic as ps1).
 
-### 客户端能力（上线后）
+### Agent Capabilities (After Callback)
 
-- **终端、文件、进程、截图/监控、SOCKS5 隧道** 等（依客户端与平台实现）。  
-- **Linux 开机自启**：systemd 用户单元、XDG autostart、crontab 等（名称含 `reshell-c2-agent`）。**Windows** 面板下发的 `autostart_set` / `autostart_remove` 在当前源码中为**未实现占位**。
+- **Terminal, file, process, screenshot/monitor, SOCKS5 tunnel**, etc. (depends on client and platform implementation).
+- **Linux autostart**: systemd user unit, XDG autostart, crontab (names include `reshell-c2-agent`).  
+  **Windows** panel actions `autostart_set` / `autostart_remove` are placeholders in current code.
 
-### 其他
+### Others
 
-- **`cmd/linuxagent`**：独立 Linux Agent 入口（需 `GOOS=linux` 编译），与面板 Stub 流程并存时以你实际部署为准。  
-- **数据库**：SQLite（默认 `data/c2.db`），首次运行自动创建。
-
----
-
-## 环境要求
-
-- **Go 1.21+**  
-- 服务端：**Linux amd64** 或 **Windows** 均可。  
-- **载荷**：依赖 Stub 文件（见上文）；不要求服务端生成时调用 g++。
+- **`cmd/linuxagent`**: standalone Linux Agent entry (build with `GOOS=linux`), coexists with panel stub flow depending on deployment.
+- **Database**: SQLite (default `data/c2.db`), initialized automatically on first run.
 
 ---
 
-## 编译与运行命令摘要
+## Environment Requirements
+
+- **Go 1.21+**
+- Server: **Linux amd64** or **Windows**
+- **Payloads** depend on stub files (see above); server-side generation does not require local g++.
+
+---
+
+## Build and Run Command Summary
 
 ```bash
-# 开发运行（须在含 config.yaml 的目录）
+# Development run (must be in directory containing config.yaml)
 go mod download
 go run ./cmd/server
 ```
 
 ```powershell
-# Windows 编译示例
+# Windows build example
 go build -trimpath -ldflags="-s -w" -o c2-server.exe ./cmd/server
 .\c2-server.exe
 ```
 
 ```powershell
-# 交叉编译 Linux amd64 服务端
+# Cross-compile Linux amd64 server
 .\scripts\build-server.ps1 -Target linux
-# 或手动：
+# or manually:
 $env:GOOS="linux"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"
 go build -trimpath -ldflags="-s -w" -o c2-server-linux ./cmd/server
 ```
 
 ---
 
-## 配置项摘要（`config.yaml`）
+## Config Summary (`config.yaml`)
 
-| 项 | 含义 |
+| Key | Meaning |
 |----|------|
-| `server.addr` | HTTP 监听，如 `:8080`、`127.0.0.1:8080` |
-| `server.public_host` | 可选；客户端可访问的 Web 主机名或 IP（无端口）；**连接指令与载荷内嵌 Web 地址优先使用**，避免误用 `localhost` |
-| `auth.login_password` | 面板登录密码 |
-| `auth.jwt_secret` | JWT 密钥，须足够随机 |
-| `database.path` | SQLite 路径 |
-| `logging.level` | 如 `info`、`debug` |
+| `server.addr` | HTTP listen address, e.g. `:8080`, `127.0.0.1:8080` |
+| `server.public_host` | Optional; target-reachable web host/IP (without port). Connect commands and embedded web address prefer this value to avoid `localhost` misuse. |
+| `auth.login_password` | Panel login password |
+| `auth.jwt_secret` | JWT secret (must be strong/random) |
+| `database.path` | SQLite path |
+| `logging.level` | e.g. `info`, `debug` |
 
-修改后需**重启进程**。
+Restart process after changes.
 
 ---
 
-## 目录结构（简要）
+## Directory Structure (Brief)
 
-| 路径 | 说明 |
+| Path | Description |
 |------|------|
-| `cmd/server` | 服务端入口 |
-| `internal/server` | 路由、鉴权、页面与 API |
-| `internal/listener` | TCP 监听 |
-| `internal/agent`、`internal/channels`、`internal/websocket` | 连接与通道 |
-| `internal/payload` | Stub 与 C2EMBED1 修补 |
+| `cmd/server` | Server entry |
+| `internal/server` | Routing, auth, pages, APIs |
+| `internal/listener` | TCP listeners |
+| `internal/agent`, `internal/channels`, `internal/websocket` | Connections and channels |
+| `internal/payload` | Stub handling and C2EMBED1 patching |
 | `internal/tunnel` | SOCKS5 |
-| `client/native` | 被控端 C++ 源码 |
-| `webdist` | 前端模板与静态资源（embed） |
-| `data/stubs` | 载荷模板（须含 C2EMBED1） |
-| `data/generated` | 生成载荷输出 |
-| `scripts` | 构建脚本 |
+| `client/native` | Native C++ agent source |
+| `webdist` | Frontend templates/static assets (embed) |
+| `data/stubs` | Payload templates (must include C2EMBED1) |
+| `data/generated` | Generated payload output |
+| `scripts` | Build scripts |
 
 ---
 
-## 安全与合规
+## Security and Compliance
 
-- 修改默认密码与 JWT；限制配置文件与数据库文件权限。  
-- 防火墙放行所需端口。  
-- 仅在**有权测试**的环境使用。
+- Change default password and JWT secret; protect config/database file permissions.
+- Open only required firewall ports.
+- Use only in **authorized** testing environments.
 
 ---
-## 注！
-- 本c2没有bin形式的shellcode，各位安全研究人员如果想使用对应功能可以使用donut工具转换成相对计算基址shellcode或者自尽进行指令替换编写，请谅解！
-## 许可证与第三方
 
-- 本项目源码（除第三方组件外）以 **MIT** 许可发布，见根目录 **`LICENSE`**。  
-- 终端界面使用 **xterm.js**（`webdist/static/xterm`），遵循其许可证。
+## Note
+
+- This C2 does not provide raw `bin` shellcode output.  
+  If needed for research, you may convert generated binaries with tools such as Donut, or implement instruction-level replacements yourself.
+
+## License and Third-Party
+
+- Project source (except third-party components) is released under **MIT**. See **`LICENSE`** in repo root.
+- Terminal UI uses **xterm.js** (`webdist/static/xterm`) under its own license.
