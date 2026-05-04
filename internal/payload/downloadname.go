@@ -12,10 +12,12 @@ func DownloadAttachmentName(storedBasename string) string {
 		return base
 	}
 	switch {
+	case strings.Contains(base, "_windows_x64_sc_") && strings.HasSuffix(base, ".bin"):
+		return "shellcode_windows_x64.bin"
+	case strings.Contains(base, "_linux_amd64_sc_") && strings.HasSuffix(base, ".bin"):
+		return "shellcode_linux_amd64.bin"
 	case strings.Contains(base, "_windows_x64_") && strings.HasSuffix(base, ".exe"):
 		return "windows_x64.exe"
-	case strings.Contains(base, "_windows_x86_") && strings.HasSuffix(base, ".exe"):
-		return "windows_x86.exe"
 	case strings.Contains(base, "_linux_amd64_") && strings.HasSuffix(base, ".elf"):
 		return "linux_amd64.elf"
 	default:

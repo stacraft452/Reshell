@@ -4,7 +4,7 @@ package payload
 
 import "os"
 
-func tryLoadEmbeddedStub(osKey string) ([]byte, error) {
-	_ = osKey
+func tryLoadEmbeddedStub(osKey, format string) ([]byte, error) {
+	_, _ = osKey, format
 	return nil, os.ErrNotExist
 }

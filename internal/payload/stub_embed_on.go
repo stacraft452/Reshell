@@ -7,7 +7,7 @@ import (
 	"os"
 )
 
-// 将编好的模板放进 stubbin/（可有其一或多项；缺的 OS 需在磁盘 data/stubs/ 或 C2_STUB_DIR 补全）。
+// 将编好的模板放进 stubbin/：windows_x64.exe、linux_amd64.elf（shellcode 与 bin 共用；Windows 壳代码在服务端再走 renut）。
 // 目录内至少需有一个文件以便 go:embed 通过（仓库自带 README.txt）。
 //
 //	go build -tags=stubembed
@@ -15,8 +15,8 @@ import (
 //go:embed stubbin/*
 var embeddedPayloadStubs embed.FS
 
-func tryLoadEmbeddedStub(osKey string) ([]byte, error) {
-	name := stubTemplateName(osKey)
+func tryLoadEmbeddedStub(osKey, format string) ([]byte, error) {
+	name := stubTemplateFile(osKey, format)
 	if name == "" {
 		return nil, os.ErrNotExist
 	}

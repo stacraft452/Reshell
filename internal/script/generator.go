@@ -133,16 +133,16 @@ func (g *Generator) GenerateCertutilOneLiner(cfg *ScriptConfig) string {
 // GenerateAllScripts 生成所有脚本
 func (g *Generator) GenerateAllScripts(cfg *ScriptConfig) map[string]string {
 	return map[string]string{
-		"windows_bat":          g.GenerateWindowsBat(cfg),
-		"powershell":           g.GeneratePowerShell(cfg),
-		"linux_sh":             g.GenerateLinuxSh(cfg),
-		"windows_oneliner":     g.GenerateWindowsOneLiner(cfg),
-		"powershell_oneliner":  g.GeneratePowerShellOneLiner(cfg),
-		"linux_oneliner":       g.GenerateLinuxOneLiner(cfg),
-		"curl_oneliner":        g.GenerateCurlOneLiner(cfg),
-		"wget_oneliner":        g.GenerateWgetOneLiner(cfg),
-		"mshta_oneliner":       g.GenerateMSHTAOneLiner(cfg),
-		"certutil_oneliner":    g.GenerateCertutilOneLiner(cfg),
+		"windows_bat":         g.GenerateWindowsBat(cfg),
+		"powershell":          g.GeneratePowerShell(cfg),
+		"linux_sh":              g.GenerateLinuxSh(cfg),
+		"windows_oneliner":      g.GenerateWindowsOneLiner(cfg),
+		"powershell_oneliner":   g.GeneratePowerShellOneLiner(cfg),
+		"linux_oneliner":        g.GenerateLinuxOneLiner(cfg),
+		"curl_oneliner":         g.GenerateCurlOneLiner(cfg),
+		"wget_oneliner":         g.GenerateWgetOneLiner(cfg),
+		"mshta_oneliner":        g.GenerateMSHTAOneLiner(cfg),
+		"certutil_oneliner":     g.GenerateCertutilOneLiner(cfg),
 	}
 }
 

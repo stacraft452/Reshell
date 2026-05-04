@@ -13,7 +13,7 @@ func TestPatchC2Embed(t *testing.T) {
 	buf := make([]byte, 2000)
 	off := 100
 	copy(buf[off:], []byte(c2embed.MagicString))
-	if err := c2embed.WriteAt(buf, off, "", 0, "", "", 30, "", 0); err != nil {
+	if err := c2embed.WriteAt(buf, off, "", 0, "", "", 30, "", 0, 0); err != nil {
 		t.Fatal(err)
 	}
 
