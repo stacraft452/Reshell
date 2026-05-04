@@ -1,8 +1,19 @@
-# Reshell（This project is able to bypass mainstream av such as HuoRong,windowsdefender,lenove security manager and so on.You can continue with donut for your own payload!!!）
+# Reshell（This project is able to bypass mainstream av）
 
 A **Go-based** C2 (Command & Control) lab platform: a single process provides a **Web admin panel**, **TCP listener**, **payload download + one-click launch scripts**.  
 Agents are written in **C/C++** (Windows / Linux amd64). Callback parameters are injected via **binary stub patching (C2EMBED1)**.  
 When generating payloads, **no local g++ invocation is required**.
+
+### Windows x64 payloads (EXE + shellcode `.bin`)
+
+For **Windows x64 / amd64** targets, the UI can generate:
+
+- **Executable payloads** — a patched template **PE (`.exe`)** with listener settings written into the **C2EMBED1** block.
+- **Shellcode payloads** — a **raw binary (`.bin`)** produced by **Donut** from that patched PE.
+
+When the **server process runs on Windows**, Windows shellcode generation **defaults to Donut entropy `-e 3`**: random naming plus **symmetric encryption** of the embedded module/instance. That provides **stronger in-memory / on-disk obfuscation** than a plaintext pack and **mitigates trivial static signatures** on the blob compared to an unencrypted layout.
+
+When the **server runs on Linux (or other non-Windows OS)**, generating Windows **`.bin`** does **not** execute Donut on that host. Instead, the server ships a **pre-generated Donut `-e1` shellcode template** (embedded at build time) and **only patches the C2EMBED region** inside it so listener IP/port and crypto fields match the selected listener — trade-offs vs live `-e3` are documented in the payload pipeline notes below.
 
 (If you encounter bugs, please open issues. The project will be improved incrementally.)
 
