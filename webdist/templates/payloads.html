@@ -49,6 +49,15 @@
                                 </div>
                                 
                                 <div class="mb-3">
+                                    <label class="form-label">输出格式</label>
+                                    <select class="form-select" id="payload-format" required>
+                                        <option value="bin">可执行载荷</option>
+                                        <option value="shellcode" id="payload-format-shellcode">壳代码（仅 Windows）</option>
+                                    </select>
+                                    <div class="form-text text-muted small" id="payload-format-hint">Windows 可选壳代码；Linux 仅生成 ELF。</div>
+                                </div>
+
+                                <div class="mb-3">
                                     <label class="form-label">目标操作系统</label>
                                     <select class="form-select" id="target-os" required>
                                         <option value="windows_x64">Windows x64 (64位)</option>
@@ -59,10 +68,8 @@
                                 <div class="form-check mb-3" id="hide-console-wrap">
                                     <input class="form-check-input" type="checkbox" id="hide-console">
                                     <label class="form-check-label" for="hide-console">隐藏控制台</label>
-                                    <div class="form-text">勾选后仅对 <strong>Windows</strong> 载荷生效：将 PE 子系统改为图形界面，运行时不再弹出黑色控制台窗口。Linux 无控制台选项。</div>
                                 </div>
                                 
-                                <p class="text-muted small mb-3">输出为可执行文件：从 <code>data/stubs/</code> 对应模板修补后写入 <code>data/generated/</code>，无需本机编译器。</p>
                                 <button type="submit" class="btn btn-primary w-100">生成载荷</button>
                             </form>
                         </div>
@@ -78,18 +85,6 @@
                             <div id="result-area">
                                 <p class="text-muted text-center">配置参数并点击生成</p>
                             </div>
-                        </div>
-                    </div>
-                    
-                    <div class="card mt-3">
-                        <div class="card-header">
-                            <span>格式说明</span>
-                        </div>
-                        <div class="card-body">
-                            <ul class="list-unstyled mb-0">
-                                <li><strong>模板路径（须预先放入 <code>data/stubs/</code>）</strong>：<code>windows_x64.exe</code>、<code>linux_amd64.elf</code>。生成时在文件中查找 <code>C2EMBED1</code> 并按布局写入回连信息。也可用 <code>C2_STUB_DIR</code> 或 <code>go build -tags=stubembed</code> 内嵌模板。</li>
-                                <li><strong>生成结果</strong> 在 <code>data/generated/</code>，不再使用 <code>data/payloads/</code>。</li>
-                            </ul>
                         </div>
                     </div>
                 </div>
@@ -144,16 +139,17 @@
         e.preventDefault();
         const listenerId = document.getElementById('listener-id').value;
         const os = document.getElementById('target-os').value;
-        const format = 'bin';
+        const format = document.getElementById('payload-format').value;
         const resultArea = document.getElementById('result-area');
         resultArea.innerHTML = '<p class="text-center"><span class="spinner-border spinner-border-sm"></span> 生成中...</p>';
         const hideConsole = document.getElementById('hide-console').checked && os.startsWith('windows');
+        const arch = 'amd64';
         const data = await fetchJSON('/api/payloads/generate', {
             method: 'POST',
             body: JSON.stringify({
                 listener_id: parseInt(listenerId),
                 os: os,
-                arch: 'amd64',
+                arch: arch,
                 format: format,
                 obfuscate: false,
                 hide_console: hideConsole
@@ -191,10 +187,29 @@
         if (!win) cb.checked = false;
     }
 
+    function syncPayloadFormatForOS() {
+        const os = document.getElementById('target-os').value;
+        const sel = document.getElementById('payload-format');
+        const scOpt = document.getElementById('payload-format-shellcode');
+        const hint = document.getElementById('payload-format-hint');
+        if (!sel || !scOpt) return;
+        const linux = os === 'linux_amd64';
+        scOpt.hidden = linux;
+        scOpt.disabled = linux;
+        if (linux && sel.value === 'shellcode') sel.value = 'bin';
+        if (hint) hint.textContent = linux
+            ? 'Linux 仅生成可执行 ELF。'
+            : 'Windows 可选壳代码（.bin）；可执行载荷为 .exe。';
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
         loadListeners();
-        document.getElementById('target-os').addEventListener('change', syncHideConsoleUI);
+        document.getElementById('target-os').addEventListener('change', () => {
+            syncHideConsoleUI();
+            syncPayloadFormatForOS();
+        });
         syncHideConsoleUI();
+        syncPayloadFormatForOS();
     });
 </script>
 </body>

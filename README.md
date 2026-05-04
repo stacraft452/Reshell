@@ -43,11 +43,15 @@ You can start the service **without preparing stubs first** (login and UI still 
 These features require prebuilt templates containing **C2EMBED1** magic bytes.  
 If stubs are missing, the service can still run, but **payload generation** and **exe/elf download triggered by connect commands** will fail.
 
+The embedded config block is **416 bytes** (`C2EMBED1` … `flags_le` … `C2EMBED2`); see `client/native/c2_embed_config.h`. After updating that layout, **rebuild stubs** (`windows_x64.exe`, `linux_amd64.elf`) from `client/native/`. **Hide console** (Windows) sets PE subsystem GUI **and** writes `flags_le` bit 0 so the agent calls `FreeConsole()` and silences `[c2-agent]` logs even when run inside a console **loader** process.
+
 | File (relative to `data/stubs/`) | Purpose |
 |---------------------------|------|
 | `windows_x64.exe` | Windows x64 payload |
-| `windows_x86.exe` | Windows x86 payload (not fully developed in this version, but Windows-compatible source is provided; you may compile it yourself using mingw32) |
 | `linux_amd64.elf` | Linux amd64 payload |
+
+**Shellcode format (`format=shellcode` in the UI):** the same two templates are used. The server patches `C2EMBED1`…`C2EMBED2` in the PE/ELF, then **on Windows** runs Donut (**`-e 3`**, default encryption) via `internal/renut` and writes a `.bin` shellcode file. **Donut resolution order:** **`C2_RENUT_EXE`** → **`data/renut/donut.exe`** next to the server binary or cwd → **embedded Donut** if you built with **`go build -tags=donutembed`** (copy `donut.exe` into `internal/renut/donutbin/` first; or run **`scripts/build-server-embed-donut.ps1`**). **Linux** shellcode is the patched ELF bytes saved as `.bin` (no Donut).  
+Optional legacy script **`scripts/build-shellcode-stubs.ps1`** pre-generated separate `shellcode_*.bin` stubs for an older flow; it is **not required** for the integrated path above.
 
 Lookup order (summary): env var **`C2_STUB_DIR`** → `data/stubs` beside executable → `data/stubs` under current working directory.  
 You can also build with **`go build -tags=stubembed`** to embed templates (see `internal/payload/stub_embed_on.go`).  
@@ -175,7 +179,7 @@ When browsing `README.md` on **GitHub / Gitee**, relative-path images load autom
 
 ### Payload and Bootstrap
 
-- **Payload generation**: patch stubs and output to **`data/generated/`**; current format is **`bin`**; targets: **Windows x64 / x86**, **Linux amd64**. Optional **`hide_console`** (Windows PE GUI subsystem).
+- **Payload generation**: patch stubs and output to **`data/generated/`**; current format is **`bin`**; targets: **Windows x64**, **Linux amd64**. Optional **`hide_console`** (Windows PE GUI subsystem).
 - **Direct HTTP endpoints (no login required)**: `GET /payload/ps1/:id`, `GET /payload_exe/:id`, `GET /payload/{id}.elf`, `GET /payload/{id}.hta` (HTA uses same pull logic as ps1).
 
 ### Agent Capabilities (After Callback)
@@ -266,8 +270,7 @@ Restart process after changes.
 
 ## Note
 
-- This C2 does not provide raw `bin` shellcode output.  
-  If needed for research, you may convert generated binaries with tools such as Donut, or implement instruction-level replacements yourself.
+- **Shellcode** output is available from **Payload Generation** when **壳代码** is selected: Windows uses Donut (`-e 3`) after in-server PE patching; Linux writes patched ELF as `.bin`.
 
 ## License and Third-Party
 
